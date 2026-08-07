@@ -23,6 +23,11 @@ services:
     restart: unless-stopped
     depends_on:
       db: { condition: service_healthy }
+    # Gibt ALLE Werte der .env an den Container weiter. Ohne das erreicht nur,
+    # was unten unter environment: steht, den Prozess - eine neue Variable in
+    # der .env wäre sonst wirkungslos, ohne dass es auffällt.
+    # environment: hat Vorrang, DATABASE_URL unten bleibt also maßgeblich.
+    env_file: [.env]
     environment: &app_env
       DATABASE_URL: "postgresql://${POSTGRES_USER:-mailing}:${POSTGRES_PASSWORD}@mailing-db:5432/${POSTGRES_DB:-mailing}?schema=public"
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?bitte in .env setzen (64 Hex-Zeichen)}
@@ -31,6 +36,16 @@ services:
       APP_URL: ${APP_URL:?bitte in .env setzen, z.B. https://mailing.example.com}
       HOSTINGER_API_TOKEN: ${HOSTINGER_API_TOKEN:-}
       CRON_SECRET: ${CRON_SECRET:-}
+      # Anmeldung über Microsoft Entra ID. Alle drei leer = nur Passwort-Login.
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_ALLOWED_DOMAINS: ${MICROSOFT_ALLOWED_DOMAINS:-}
+      MICROSOFT_AUTO_PROVISION: ${MICROSOFT_AUTO_PROVISION:-}
+      MICROSOFT_DEFAULT_ROLE: ${MICROSOFT_DEFAULT_ROLE:-VIEWER}
+      # "false" schaltet die Passwortanmeldung ab - erst setzen, wenn die
+      # Microsoft-Anmeldung nachweislich funktioniert.
+      AUTH_LOCAL_ENABLED: ${AUTH_LOCAL_ENABLED:-}
       NODE_ENV: production
       # Beim allerersten Start auf 1 setzen, danach wieder entfernen.
       RUN_SEED_ON_START: ${RUN_SEED_ON_START:-0}
@@ -53,6 +68,7 @@ services:
     depends_on:
       app: { condition: service_started }
       db: { condition: service_healthy }
+    env_file: [.env]
     environment: *app_env
     command: ["node", "dist/worker/main.js"]
     networks: [internal]
