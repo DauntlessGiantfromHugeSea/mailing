@@ -3,8 +3,11 @@ import {
   dailyLimitFromPlan,
   fetchAllPages,
   getHostingerClient,
+  itemsOf,
   normalizeDnsStatus,
   type DnsCheckItem,
+  type MailOrder,
+  type ReachProfile,
 } from "./hostinger";
 import { encryptField, blindIndex } from "./crypto";
 import { upsertContacts } from "./contacts";
@@ -151,7 +154,7 @@ export async function checkDeliverability(profileUuid?: string): Promise<Deliver
 
   if (!uuid) {
     const profiles = await c.listReachProfiles({ per_page: 10 });
-    const first = profiles.data?.[0];
+    const first = itemsOf<ReachProfile>(profiles)[0];
     if (!first) {
       return {
         profileUuid: null,
@@ -188,8 +191,21 @@ export async function importReachContacts(opts: {
   listId?: string | null;
 }): Promise<{ imported: number; created: number; updated: number; skipped: number }> {
   const c = await client();
-  const uuid = opts.profileUuid ?? (await getSetting(SETTINGS.reachProfileUuid));
-  if (!uuid) throw new SyncError("Kein Reach-Profil ausgewählt.");
+
+  // Profil bestimmen: Vorgabe, gespeicherte Einstellung, sonst das erste
+  // Profil des Kontos. Vorher wurde hier hart abgebrochen, wenn die UUID nicht
+  // von Hand eingetragen war - obwohl der DNS-Check sie längst selbst findet.
+  // Wer nur ein Reach-Profil hat, sollte nichts konfigurieren müssen.
+  let uuid = opts.profileUuid ?? (await getSetting(SETTINGS.reachProfileUuid)) ?? null;
+  if (!uuid) {
+    const first = itemsOf<ReachProfile>(await c.listReachProfiles({ per_page: 10 }))[0];
+    if (!first) {
+      throw new SyncError(
+        "Im Hostinger-Konto ist kein Reach-Profil vorhanden. Kontakte können per CSV-Import oder „Kontakt hinzufügen“ gepflegt werden."
+      );
+    }
+    uuid = first.uuid;
+  }
 
   const contacts = await fetchAllPages((page) =>
     c.listReachContacts(uuid, { page, per_page: 100 })
@@ -242,7 +258,7 @@ export async function reconcileDelivery(opts: {
   if (!orderId) {
     // Kein Order gesetzt: den ersten aktiven nehmen.
     const orders = await c.listMailOrders({ status: "active", per_page: 1 });
-    const first = orders.data?.[0];
+    const first = itemsOf<MailOrder>(orders)[0];
     if (!first) throw new SyncError("Keine aktive Mail-Bestellung im Hostinger-Konto gefunden.");
     return reconcileDelivery({ orderId: String(first.id), hoursBack: opts.hoursBack });
   }
@@ -325,6 +341,122 @@ export async function reconcileDelivery(opts: {
   }
 
   return { checked: jobs.length, confirmed, failedAtProvider, unmatched };
+}
+
+// ------------------------------------------------------------------ Diagnose
+
+export interface HostingerDiagnosis {
+  tokenOk: boolean;
+  tokenError?: string;
+  mailOrders: { id: string; domain: string; status: string; mailboxes: number }[];
+  reachProfiles: { uuid: string; name: string }[];
+  /** Klartext-Einordnung für die Oberfläche. */
+  findings: { level: "ok" | "warn" | "info"; text: string }[];
+}
+
+/**
+ * Zeigt, was die API im Konto tatsaechlich vorfindet.
+ *
+ * Grund: "Keine Postfaecher gefunden" ist als Rueckmeldung nutzlos - es kann
+ * ein falsches Token, ein fehlendes Produkt oder eine leere Bestellung
+ * bedeuten. Diese Funktion benennt den Unterschied.
+ */
+export async function diagnose(): Promise<HostingerDiagnosis> {
+  const out: HostingerDiagnosis = {
+    tokenOk: false,
+    mailOrders: [],
+    reachProfiles: [],
+    findings: [],
+  };
+
+  let c;
+  try {
+    c = await client();
+  } catch (e) {
+    out.tokenError = e instanceof Error ? e.message : String(e);
+    out.findings.push({ level: "info", text: out.tokenError });
+    return out;
+  }
+
+  // --- Mail-Bestellungen und deren Postfaecher
+  try {
+    const orders = await fetchAllPages((page) => c.listMailOrders({ page, per_page: 50 }));
+    out.tokenOk = true;
+
+    for (const o of orders) {
+      let count = 0;
+      try {
+        count = (await fetchAllPages((page) => c.listMailboxes(o.id, { page, per_page: 100 })))
+          .length;
+      } catch {
+        count = -1; // nicht lesbar
+      }
+      out.mailOrders.push({
+        id: String(o.id),
+        domain: o.domain,
+        status: o.status,
+        mailboxes: count,
+      });
+    }
+
+    if (orders.length === 0) {
+      out.findings.push({
+        level: "warn",
+        text: "Das Token ist gültig, aber im Hostinger-Konto liegt keine Mail-Bestellung. Das Postfach-Einlesen kann deshalb nichts finden — es gibt bei Hostinger keine Postfächer. Absender bitte unter „Absender“ manuell anlegen; ein Postfach bei einem anderen Anbieter (z. B. all-inkl mit smtp-Server w0…​.kasserver.com) funktioniert genauso.",
+      });
+    } else {
+      const withBoxes = out.mailOrders.filter((o) => o.mailboxes > 0);
+      if (withBoxes.length === 0) {
+        out.findings.push({
+          level: "warn",
+          text: `${orders.length} Mail-Bestellung(en) gefunden, aber ohne angelegte Postfächer. Postfächer werden im hPanel erstellt, nicht hier.`,
+        });
+      } else {
+        out.findings.push({
+          level: "ok",
+          text: `${withBoxes.reduce((n, o) => n + o.mailboxes, 0)} Postfach/Postfächer gefunden — „Postfächer aus Hostinger laden“ auf der Absender-Seite zeigt sie an.`,
+        });
+      }
+    }
+  } catch (e) {
+    out.tokenError = e instanceof Error ? e.message : String(e);
+    out.findings.push({
+      level: "warn",
+      text: `Die Mail-API antwortet nicht wie erwartet: ${out.tokenError}. Häufigste Ursache: das Token hat keine Berechtigung für den Mail-Bereich.`,
+    });
+  }
+
+  // --- Reach-Profile (Kontakte, DNS-Status)
+  try {
+    const profiles = await fetchAllPages((page) => c.listReachProfiles({ page, per_page: 50 }));
+    out.reachProfiles = profiles.map((p) => ({
+      uuid: p.uuid,
+      name: p.name ?? p.domain ?? p.uuid,
+    }));
+    if (profiles.length === 0) {
+      out.findings.push({
+        level: "warn",
+        text: "Kein Hostinger-Reach-Profil vorhanden. Damit gibt es weder Kontakte zum Übernehmen noch einen SPF/DKIM-Check über die API. Empfängerlisten bitte per CSV-Import oder „Kontakt hinzufügen“ pflegen — das ist der übliche Weg und unabhängig von Hostinger.",
+      });
+    } else {
+      out.findings.push({
+        level: "ok",
+        text: `${profiles.length} Reach-Profil(e) gefunden: ${out.reachProfiles.map((p) => p.name).join(", ")}.`,
+      });
+    }
+  } catch (e) {
+    out.findings.push({
+      level: "info",
+      text: `Reach-API nicht abrufbar: ${e instanceof Error ? e.message : String(e)}. Ohne Reach entfallen nur Kontakt-Import und DNS-Check.`,
+    });
+  }
+
+  out.findings.push({
+    level: "info",
+    text: "Zur Einordnung: der Versand selbst läuft immer über SMTP und braucht die Hostinger-API nicht. Sie liefert nur Komfort (Postfächer einlesen, Limits, DNS-Check) und Kontrolle (Abgleich der Zustell-Logs).",
+  });
+
+  return out;
 }
 
 /** Test des hinterlegten Tokens. */

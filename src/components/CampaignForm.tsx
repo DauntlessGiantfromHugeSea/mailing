@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DAY_LABELS } from "@/lib/dayLabels";
+import { MailPreview, type PreviewContact } from "./MailPreview";
 
 // Kampagnen-Formular mit Live-Vorschau der Taktung.
 //
@@ -69,6 +70,7 @@ export function CampaignForm({
   initial,
   submitLabel,
   totalActiveContacts,
+  previewContacts,
 }: {
   action: string;
   lists: ListOption[];
@@ -77,6 +79,7 @@ export function CampaignForm({
   initial?: Partial<CampaignFormValues>;
   submitLabel: string;
   totalActiveContacts: number;
+  previewContacts?: PreviewContact[];
 }) {
   const [values, setValues] = useState<CampaignFormValues>({
     name: initial?.name ?? "",
@@ -242,6 +245,14 @@ export function CampaignForm({
             </div>
           </details>
         </div>
+
+        {/* Vorschau des Mailinhalts */}
+        <MailPreview
+          subject={values.subject}
+          bodyHtml={values.bodyHtml}
+          bodyText={values.bodyText}
+          contacts={previewContacts}
+        />
 
         {/* Empfänger */}
         <div className="card p-5 space-y-4">

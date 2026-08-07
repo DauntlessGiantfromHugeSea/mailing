@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db";
 import { canEdit, roleLabel } from "@/lib/rbac";
 import { getDefaults } from "@/lib/settings";
 import { loadSenderStats } from "@/lib/senders";
+import { decryptContact } from "@/lib/contacts";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,22 @@ export default async function NewCampaignPage({
     prisma.contact.count({ where: { status: "ACTIVE" } }),
   ]);
 
+  // Ein paar echte Kontakte für die Inhalts-Vorschau, damit sich Platzhalter
+  // mit tatsächlichen Daten prüfen lassen.
+  const previewSource = await prisma.contact.findMany({
+    where: { status: "ACTIVE" },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+  const previewContacts = previewSource.map((c) => {
+    const d = decryptContact(c);
+    return {
+      id: c.id,
+      label:
+        [d.firstNamePlain, d.lastNamePlain].filter(Boolean).join(" ") || d.emailPlain || "Kontakt",
+    };
+  });
+
   const stats = await loadSenderStats(senders);
 
   return (
@@ -60,6 +77,7 @@ export default async function NewCampaignPage({
         submitLabel="Planen &amp; starten"
         defaults={defaults}
         totalActiveContacts={totalActiveContacts}
+        previewContacts={previewContacts}
         lists={lists.map((l) => ({ id: l.id, name: l.name, count: l._count.memberships }))}
         senders={stats.map((x) => ({
           id: x.sender.id,

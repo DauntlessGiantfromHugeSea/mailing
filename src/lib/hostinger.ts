@@ -178,7 +178,7 @@ export class HostingerClient {
   /** Billigster Call, der ein gueltiges Token beweist. */
   async ping(): Promise<{ ok: true; orders: number }> {
     const r = await this.listMailOrders({ per_page: 1 });
-    return { ok: true, orders: r.meta?.total ?? r.data.length };
+    return { ok: true, orders: r?.meta?.total ?? itemsOf(r).length };
   }
 
   // --------------------------------------------------------------- Mail API
@@ -266,19 +266,63 @@ export async function getHostingerClient(): Promise<HostingerClient | null> {
 
 // --------------------------------------------------------------- Hilfsfunktionen
 
+/**
+ * Zieht die Liste aus einer Antwort, unabhaengig von der Huelle.
+ *
+ * Die Endpunkte antworten nicht einheitlich: teils `{ data: [...] }`, teils ein
+ * nacktes Array, teils unter einem anderen Schluessel. Wurde nur `data`
+ * erwartet, kam bei den anderen Formen stillschweigend eine leere Liste heraus
+ * - und die Oberflaeche meldete "nichts gefunden", obwohl Daten da waren.
+ */
+export function itemsOf<T>(res: unknown): T[] {
+  if (Array.isArray(res)) return res as T[];
+  if (res && typeof res === "object") {
+    const obj = res as Record<string, unknown>;
+    if (Array.isArray(obj.data)) return obj.data as T[];
+    // Fallback: erster Schluessel, dessen Wert ein Array ist.
+    for (const key of ["items", "results", "contacts", "mailboxes", "orders", "profiles"]) {
+      if (Array.isArray(obj[key])) return obj[key] as T[];
+    }
+    for (const v of Object.values(obj)) {
+      if (Array.isArray(v)) return v as T[];
+    }
+  }
+  return [];
+}
+
+function metaOf(res: unknown): Paginated<unknown>["meta"] | undefined {
+  if (res && typeof res === "object" && "meta" in res) {
+    const m = (res as { meta?: unknown }).meta;
+    if (m && typeof m === "object") return m as Paginated<unknown>["meta"];
+  }
+  return undefined;
+}
+
 /** Holt alle Seiten einer paginierten Liste (mit Sicherheitsdeckel). */
 export async function fetchAllPages<T>(
   fetchPage: (page: number) => Promise<Paginated<T>>,
   maxPages = 50
 ): Promise<T[]> {
   const out: T[] = [];
+  let previousSignature = "";
+
   for (let page = 1; page <= maxPages; page++) {
     const res = await fetchPage(page);
-    const items = res?.data ?? [];
+    const items = itemsOf<T>(res);
+    if (items.length === 0) break;
+
+    // Liefert der Endpunkt kein meta, ist unbekannt, ob es weitere Seiten
+    // gibt. Ignoriert er zusaetzlich den page-Parameter, wuerde eine
+    // Endlosschleife dieselben Datensaetze vielfach anhaengen. Deshalb die
+    // Seite mit der vorherigen vergleichen und bei Gleichheit abbrechen.
+    const signature = JSON.stringify(items.slice(0, 3));
+    if (signature === previousSignature) break;
+    previousSignature = signature;
+
     out.push(...items);
-    const last = res?.meta?.last_page;
-    if (last !== undefined ? page >= last : items.length === 0) break;
-    if (last === undefined && items.length === 0) break;
+
+    const last = metaOf(res)?.last_page;
+    if (last !== undefined && page >= last) break;
   }
   return out;
 }

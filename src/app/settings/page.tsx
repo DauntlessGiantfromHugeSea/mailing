@@ -5,7 +5,12 @@ import { Toasts } from "@/components/Toasts";
 import { isAdmin, roleLabel } from "@/lib/rbac";
 import { getDefaults, getSetting, SETTINGS } from "@/lib/settings";
 import { getApiToken } from "@/lib/hostinger";
-import { checkDeliverability, type DeliverabilityReport } from "@/lib/hostingerSync";
+import {
+  checkDeliverability,
+  diagnose,
+  type DeliverabilityReport,
+  type HostingerDiagnosis,
+} from "@/lib/hostingerSync";
 import { prisma } from "@/lib/db";
 import { formatInZone } from "@/lib/sendWindow";
 
@@ -14,7 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: { ok?: string; error?: string; dns?: string };
+  searchParams: { ok?: string; error?: string; dns?: string; diag?: string };
 }) {
   const s = await getSession();
   if (!s) redirect("/login");
@@ -43,6 +48,16 @@ export default async function SettingsPage({
   if (searchParams.dns === "1" && token) {
     try {
       dns = await checkDeliverability();
+    } catch (e) {
+      dnsError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // Diagnose ebenfalls nur auf Klick.
+  let diag: HostingerDiagnosis | null = null;
+  if (searchParams.diag === "1" && token) {
+    try {
+      diag = await diagnose();
     } catch (e) {
       dnsError = e instanceof Error ? e.message : String(e);
     }
@@ -127,6 +142,100 @@ export default async function SettingsPage({
               )}
             </div>
           </form>
+        </div>
+
+        {/* Hostinger-Diagnose */}
+        <div className="card p-5 space-y-4 lg:col-span-2">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="font-semibold">Was findet die API im Konto?</h2>
+              <p className="hint">
+                Zeigt Mail-Bestellungen, Postfächer und Reach-Profile. Hilfreich, wenn „Postfächer
+                laden“ oder der Kontakt-Import leer bleibt — dann ist hier zu sehen, ob es an
+                Token, Produkt oder Berechtigung liegt.
+              </p>
+            </div>
+            {token && (
+              <a href="/settings?diag=1" className="btn-secondary shrink-0">
+                Konto prüfen
+              </a>
+            )}
+          </div>
+
+          {!token && <p className="text-sm text-slate-500">Benötigt ein hinterlegtes API-Token.</p>}
+
+          {diag && (
+            <>
+              <div className="space-y-2">
+                {diag.findings.map((f, i) => (
+                  <div
+                    key={i}
+                    className={
+                      f.level === "ok" ? "toast-ok" : f.level === "warn" ? "toast-warn" : "toast-info"
+                    }
+                  >
+                    <span className="text-[13px]">{f.text}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                    Mail-Bestellungen
+                  </div>
+                  {diag.mailOrders.length === 0 ? (
+                    <p className="text-sm text-slate-500">keine</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {diag.mailOrders.map((o) => (
+                        <li
+                          key={o.id}
+                          className="rounded-lg bg-white/60 border border-slate-900/[0.06] px-3 py-2"
+                        >
+                          <div className="text-sm font-medium">{o.domain}</div>
+                          <div className="text-[11px] text-slate-500 mono">
+                            {o.status} ·{" "}
+                            {o.mailboxes < 0 ? "Postfächer nicht lesbar" : `${o.mailboxes} Postfach/Postfächer`}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mono break-all">
+                            Order-ID: {o.id}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                    Reach-Profile
+                  </div>
+                  {diag.reachProfiles.length === 0 ? (
+                    <p className="text-sm text-slate-500">keine</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {diag.reachProfiles.map((p) => (
+                        <li
+                          key={p.uuid}
+                          className="rounded-lg bg-white/60 border border-slate-900/[0.06] px-3 py-2"
+                        >
+                          <div className="text-sm font-medium">{p.name}</div>
+                          <div className="text-[10px] text-slate-400 mono break-all">{p.uuid}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {diag.reachProfiles.length > 1 && (
+                    <p className="hint">
+                      Mehrere Profile: die gewünschte UUID oben unter „Reach-Profil-UUID“
+                      eintragen. Bei einem einzigen Profil wird es automatisch benutzt.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Deliverability */}

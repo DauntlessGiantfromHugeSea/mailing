@@ -166,6 +166,37 @@ export default async function ContactsPage({
           </div>
 
           <div className="space-y-4 sm:space-y-6">
+            {/* Einzelnen Kontakt anlegen */}
+            <div className="card p-5">
+              <h2 className="font-semibold mb-1">Kontakt hinzufügen</h2>
+              <p className="hint mb-3">Für einzelne Adressen — ohne CSV.</p>
+              <form method="post" action="/api/contacts" className="space-y-3">
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  className="input"
+                  placeholder="adresse@firma.de"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input name="firstName" className="input" placeholder="Vorname" />
+                  <input name="lastName" className="input" placeholder="Nachname" />
+                </div>
+                <input name="company" className="input" placeholder="Firma (optional)" />
+                <input name="tags" className="input" placeholder="Tags, kommagetrennt (optional)" />
+                <select name="listId" className="input">
+                  <option value="">— keiner Liste zuordnen —</option>
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+                <input name="newListName" className="input" placeholder="oder neue Liste anlegen" />
+                <button className="btn-primary w-full">Hinzufügen</button>
+              </form>
+            </div>
+
             {/* Neue Liste */}
             <div className="card p-5">
               <h2 className="font-semibold mb-3">Neue Liste</h2>
