@@ -175,6 +175,77 @@ export class HostingerClient {
     return parsed as T;
   }
 
+  /**
+   * Ruft einen Endpunkt auf und beschreibt die Antwort, ohne zu werfen.
+   *
+   * Fuer die Fehlersuche: bei "nichts gefunden" ist der Unterschied zwischen
+   * 401 (Token), 403 (Berechtigung), 404 (Endpunkt/Produkt fehlt) und 200 mit
+   * leerer Liste entscheidend - von aussen sieht alles gleich aus. Gibt bewusst
+   * nur Struktur und Feldnamen zurueck, keine Inhalte.
+   */
+  async probe(
+    path: string,
+    query: Record<string, string | number | undefined> = {}
+  ): Promise<{
+    path: string;
+    status: number;
+    ok: boolean;
+    topLevelKeys: string[];
+    itemCount: number;
+    itemKeys: string[];
+    message?: string;
+  }> {
+    const url = new URL(this.baseUrl + path);
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined) url.searchParams.set(k, String(v));
+    }
+
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${this.token}`, Accept: "application/json" },
+        cache: "no-store",
+      });
+      const text = await res.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = text;
+      }
+
+      const items = itemsOf<Record<string, unknown>>(parsed);
+      const first = items[0];
+
+      return {
+        path,
+        status: res.status,
+        ok: res.ok,
+        topLevelKeys: Array.isArray(parsed)
+          ? ["(Array)"]
+          : parsed && typeof parsed === "object"
+            ? Object.keys(parsed as object).slice(0, 12)
+            : [typeof parsed],
+        itemCount: items.length,
+        itemKeys: first && typeof first === "object" ? Object.keys(first).slice(0, 12) : [],
+        message:
+          !res.ok && parsed && typeof parsed === "object" && "message" in parsed
+            ? String((parsed as { message: unknown }).message)
+            : undefined,
+      };
+    } catch (e) {
+      return {
+        path,
+        status: 0,
+        ok: false,
+        topLevelKeys: [],
+        itemCount: 0,
+        itemKeys: [],
+        message: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }
+
   /** Billigster Call, der ein gueltiges Token beweist. */
   async ping(): Promise<{ ok: true; orders: number }> {
     const r = await this.listMailOrders({ per_page: 1 });

@@ -179,6 +179,64 @@ export default async function SettingsPage({
                 ))}
               </div>
 
+              {/* Rohe Antworten - trennt Token-, Berechtigungs- und
+                  Produktfehler, die von aussen gleich aussehen. */}
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                  Antworten der API
+                </div>
+                <div className="card overflow-hidden">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Endpunkt</th>
+                        <th>HTTP</th>
+                        <th>Einträge</th>
+                        <th>Struktur</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diag.probes.map((p) => (
+                        <tr key={p.path}>
+                          <td className="mono text-[11px] break-all">{p.path}</td>
+                          <td>
+                            <span
+                              className={
+                                "badge mono " +
+                                (p.ok
+                                  ? p.itemCount > 0
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-amber-100 text-amber-800"
+                                  : "bg-red-100 text-red-700")
+                              }
+                            >
+                              {p.status || "Fehler"}
+                            </span>
+                          </td>
+                          <td className="mono text-sm">{p.itemCount}</td>
+                          <td className="text-[11px] text-slate-500">
+                            {p.topLevelKeys.length > 0 && (
+                              <div>Hülle: {p.topLevelKeys.join(", ")}</div>
+                            )}
+                            {p.itemKeys.length > 0 && (
+                              <div className="text-slate-400">Felder: {p.itemKeys.join(", ")}</div>
+                            )}
+                            {p.message && <div className="text-red-600">{p.message}</div>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="hint">
+                  <strong>200 mit 0 Einträgen</strong> = Token gültig, aber das Konto hat dieses
+                  Produkt nicht oder das Token deckt den Bereich nicht ab.{" "}
+                  <strong>401</strong> = Token ungültig. <strong>403</strong> = Bereich nicht
+                  freigegeben. <strong>404</strong> = Endpunkt/Produkt nicht vorhanden. Es werden
+                  nur Feldnamen gezeigt, keine Inhalte.
+                </p>
+              </div>
+
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">

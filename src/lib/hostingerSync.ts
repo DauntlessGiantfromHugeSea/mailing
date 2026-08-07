@@ -345,11 +345,23 @@ export async function reconcileDelivery(opts: {
 
 // ------------------------------------------------------------------ Diagnose
 
+export interface EndpointProbe {
+  path: string;
+  status: number;
+  ok: boolean;
+  topLevelKeys: string[];
+  itemCount: number;
+  itemKeys: string[];
+  message?: string;
+}
+
 export interface HostingerDiagnosis {
   tokenOk: boolean;
   tokenError?: string;
   mailOrders: { id: string; domain: string; status: string; mailboxes: number }[];
   reachProfiles: { uuid: string; name: string }[];
+  /** Rohe Antworten je Endpunkt - zeigt Status und Struktur, keine Inhalte. */
+  probes: EndpointProbe[];
   /** Klartext-Einordnung für die Oberfläche. */
   findings: { level: "ok" | "warn" | "info"; text: string }[];
 }
@@ -366,6 +378,7 @@ export async function diagnose(): Promise<HostingerDiagnosis> {
     tokenOk: false,
     mailOrders: [],
     reachProfiles: [],
+    probes: [],
     findings: [],
   };
 
@@ -376,6 +389,33 @@ export async function diagnose(): Promise<HostingerDiagnosis> {
     out.tokenError = e instanceof Error ? e.message : String(e);
     out.findings.push({ level: "info", text: out.tokenError });
     return out;
+  }
+
+  // --- Rohe Antworten erheben. Das trennt "Token falsch" von "keine
+  //     Berechtigung" von "200 mit leerer Liste" - von aussen nicht
+  //     unterscheidbar, aber die Ursache ist jeweils eine andere.
+  out.probes.push(await c.probe("/api/mail/v1/orders", { per_page: 5 }));
+  out.probes.push(await c.probe("/api/reach/v1/profiles", { per_page: 5 }));
+
+  const probedProfile = out.probes[1];
+  if (probedProfile.itemCount === 0 && probedProfile.ok) {
+    out.findings.push({
+      level: "warn",
+      text: "Der Reach-Endpunkt antwortet mit HTTP 200, liefert aber keine Profile. Entweder ist im Konto kein Reach-Profil angelegt, oder das API-Token deckt den Reach-Bereich nicht ab. Ein Token wird im hPanel mit ausgewählten Bereichen erzeugt - fehlt „Reach“, kommt genau diese leere Liste.",
+    });
+  }
+
+  const mailProbe = out.probes[0];
+  if (!mailProbe.ok) {
+    out.findings.push({
+      level: "warn",
+      text: `Der Mail-Endpunkt antwortet mit HTTP ${mailProbe.status}${mailProbe.message ? `: ${mailProbe.message}` : ""}. 401 heißt ungültiges Token, 403 fehlende Berechtigung für den Mail-Bereich, 404 kein solches Produkt im Konto.`,
+    });
+  } else if (mailProbe.itemCount === 0) {
+    out.findings.push({
+      level: "warn",
+      text: "Der Mail-Endpunkt antwortet mit HTTP 200, liefert aber keine Bestellung. Entweder gibt es bei Hostinger kein Mail-Produkt, oder das Token deckt den Mail-Bereich nicht ab.",
+    });
   }
 
   // --- Mail-Bestellungen und deren Postfaecher
