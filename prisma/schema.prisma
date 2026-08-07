@@ -31,10 +31,20 @@ model User {
   id           String   @id @default(cuid())
   email        String   @unique
   name         String
-  passwordHash String
+  // Leer, wenn der Zugang nur über Microsoft läuft. Ein leerer Hash kann
+  // niemals einem bcrypt-Vergleich genügen - das Konto ist damit für die
+  // Passwortanmeldung gesperrt, ohne es deaktivieren zu müssen.
+  passwordHash String   @default("")
   role         Role     @default(VIEWER)
   active       Boolean  @default(true)
   lastLoginAt  DateTime?
+
+  // Microsoft Entra ID: die Objekt-ID (oid) des Kontos. Stabiler als die
+  // E-Mail-Adresse, die sich ändern kann.
+  msOid        String?  @unique
+  // Woher kam die letzte Anmeldung? Nur zur Anzeige.
+  lastLoginVia String?
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

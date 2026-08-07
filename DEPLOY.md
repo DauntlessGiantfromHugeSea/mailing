@@ -307,6 +307,83 @@ Grund einzutragen schwächt die Authentifizierung.
 
 ---
 
+## Anmeldung mit Microsoft (Entra ID)
+
+Optional. Ohne Konfiguration bleibt es bei E-Mail und Passwort.
+
+### 1. App-Registrierung anlegen
+
+Im **Azure-Portal** → *Microsoft Entra ID* → *App-Registrierungen* → *Neue Registrierung*:
+
+| Feld | Wert |
+|---|---|
+| Name | z. B. `Mailing` |
+| Kontotypen | **Nur Konten in diesem Organisationsverzeichnis** (Single Tenant) |
+| Redirect-URI | Plattform **Web**, URI `https://mailing.rss-fb.com/api/auth/microsoft/callback` |
+
+Danach notieren: **Anwendungs-ID (Client)** und **Verzeichnis-ID (Mandant)** von der Übersichtsseite.
+
+### 2. Clientschlüssel erzeugen
+
+*Zertifikate & Geheimnisse* → *Neuer Clientschlüssel*. Der Wert ist **nur einmal sichtbar** —
+direkt kopieren. Ablaufdatum notieren, sonst bricht die Anmeldung irgendwann unerwartet ab.
+
+### 3. E-Mail-Claim sicherstellen
+
+*Tokenkonfiguration* → *Optionalen Anspruch hinzufügen* → Tokentyp **ID** → **email**.
+
+Das ist nicht optional in der Praxis: ohne diesen Claim liefert das Token keine
+Mailadresse und die Anmeldung bricht mit einer entsprechenden Meldung ab.
+
+### 4. In die `.env`
+
+```bash
+MICROSOFT_TENANT_ID="<Verzeichnis-ID>"
+MICROSOFT_CLIENT_ID="<Anwendungs-ID>"
+MICROSOFT_CLIENT_SECRET="<Clientschlüssel>"
+MICROSOFT_ALLOWED_DOMAINS="fb-eng.de,rss-fb.com"
+```
+
+Dann `docker compose up -d app`.
+
+### 5. Zuordnung zum vorhandenen Konto
+
+Beim ersten Microsoft-Login wird über die **E-Mail-Adresse** zugeordnet. Damit
+der bestehende Admin-Zugang erhalten bleibt, muss dessen Adresse mit der
+Microsoft-Adresse übereinstimmen:
+
+```bash
+docker compose exec db psql -U mailing -d mailing \
+  -c "UPDATE \"User\" SET email='deine@microsoft-adresse.de' WHERE role='ADMIN';"
+```
+
+Alternativ `MICROSOFT_AUTO_PROVISION=1` setzen — dann werden unbekannte
+Adressen automatisch angelegt, allerdings mit der Rolle aus
+`MICROSOFT_DEFAULT_ROLE` (Standard `VIEWER`, also nur Leserechte).
+
+Ab der zweiten Anmeldung läuft die Zuordnung über die Objekt-ID (`oid`) des
+Microsoft-Kontos. Eine spätere Adressänderung bricht den Zugang dann nicht.
+
+### 6. Erst danach: Passwort-Login abschalten
+
+```bash
+echo 'AUTH_LOCAL_ENABLED="false"' >> .env
+docker compose up -d app
+```
+
+> ⚠️ **Reihenfolge einhalten.** Diesen Schritt erst nach einer *erfolgreichen*
+> Microsoft-Anmeldung ausführen. Sind beide Verfahren aus, kommt niemand mehr
+> hinein. Zurückholen lässt sich das nur auf dem Server:
+>
+> ```bash
+> sed -i '/^AUTH_LOCAL_ENABLED=/d' .env && docker compose up -d app
+> ```
+
+Der Passwort-Endpunkt ist dann auch bei direktem Aufruf gesperrt, nicht nur im
+Formular ausgeblendet.
+
+---
+
 ## Betrieb
 
 ```bash

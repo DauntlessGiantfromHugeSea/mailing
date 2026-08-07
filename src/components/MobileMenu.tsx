@@ -68,6 +68,14 @@ export function MobileMenu({
               </Link>
             ))}
             <div className="menu-divider" />
+            <Link
+              href="/account"
+              onClick={() => setOpen(false)}
+              className={"menu-item " + (active === "account" ? "bg-brand-50 text-brand-700 font-medium" : "")}
+            >
+              Mein Konto &amp; Passwort
+            </Link>
+            <div className="menu-divider" />
             <form action="/api/auth/logout" method="post">
               <button className="menu-item menu-item-danger w-full">Abmelden</button>
             </form>

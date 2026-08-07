@@ -71,6 +71,9 @@ export function Shell({
                 <div className="text-sm font-medium truncate">{session.name}</div>
                 <div className="text-xs text-slate-500">{roleLabel(session.role)}</div>
               </div>
+              <Link href="/account" className="menu-item">
+                Mein Konto &amp; Passwort
+              </Link>
               <Link href="/settings" className="menu-item">
                 Einstellungen
               </Link>

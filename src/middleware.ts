@@ -10,7 +10,11 @@ import { SESSION_COOKIE } from "@/lib/session";
 // Edge-Umgebung ziehen. getSession() in den Server-Komponenten macht die
 // verbindliche Pruefung.
 
-const PUBLIC_PREFIXES = ["/login", "/abmelden", "/api/auth/login", "/api/cron"];
+// "/api/auth" deckt login, logout und den Microsoft-Flow ab. Der
+// OIDC-Rücksprung /api/auth/microsoft/callback erfolgt zwangsläufig ohne
+// Session - stünde er nicht hier, würde die Middleware ihn auf /login
+// umleiten und die Anmeldung könnte nie abgeschlossen werden.
+const PUBLIC_PREFIXES = ["/login", "/abmelden", "/api/auth", "/api/cron"];
 
 export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;

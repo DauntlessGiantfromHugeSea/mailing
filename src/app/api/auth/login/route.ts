@@ -3,8 +3,15 @@ import { prisma } from "@/lib/db";
 import { createSession } from "@/lib/session";
 import { audit } from "@/lib/audit";
 import { seeOther, backWithError } from "@/lib/http";
+import { localLoginEnabled } from "@/lib/authMicrosoft";
 
 export async function POST(req: Request): Promise<Response> {
+  // Der Schalter muss auch hier greifen, nicht nur im Formular: sonst bliebe
+  // der Endpunkt trotz abgeschalteter Passwortanmeldung direkt aufrufbar.
+  if (!localLoginEnabled()) {
+    return backWithError("/login", "Die Anmeldung mit Passwort ist deaktiviert.");
+  }
+
   const form = await req.formData();
   const email = String(form.get("email") ?? "")
     .trim()
