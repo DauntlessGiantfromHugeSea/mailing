@@ -92,9 +92,26 @@ cd mailing && git checkout claude/randomized-email-sender-441ygi
 sh scripts/install.sh mailing.rss-fb.com admin@deine-domain.de
 ```
 
-`install.sh` erzeugt die `.env` samt Secrets, führt den Preflight aus, prüft das
-Caddyfile, baut und startet den Stack und wartet auf das Zertifikat. Am Ende
-stehen die Zugangsdaten für den ersten Login auf dem Bildschirm.
+`install.sh` erkennt selbst, welche Betriebsart passt, und richtet sich danach:
+
+| Erkennung | Betriebsart |
+|---|---|
+| Ports 80/443 sind frei | **Variante A** — eigener Caddy, holt das Zertifikat selbst |
+| Ports 80/443 sind belegt | **Variante B** — kein eigener Caddy; die App wird hinter den vorhandenen Proxy gehängt, das Skript gibt am Ende den passenden Konfigurationsblock aus |
+
+Ist Port 3000 schon belegt (anderer Stack auf demselben Server), sucht das
+Skript automatisch den nächsten freien Port und schreibt ihn als `APP_PORT` in
+die `.env`.
+
+Erzwingen lässt sich beides:
+
+```bash
+PROXY_MODE=behind APP_PORT=3020 sh scripts/install.sh mailing.rss-fb.com admin@…
+```
+
+Das Skript erzeugt die `.env` samt Secrets, führt den Preflight aus, baut und
+startet den Stack, und wartet in Variante A auf das Zertifikat. Am Ende stehen
+die Zugangsdaten für den ersten Login auf dem Bildschirm.
 
 Mehrfaches Ausführen ist unschädlich: eine vorhandene `.env` wird **nicht**
 überschrieben — sonst wäre der `FIELD_ENCRYPTION_KEY` weg und mit ihm der Zugang

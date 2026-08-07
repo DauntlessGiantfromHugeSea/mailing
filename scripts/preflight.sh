@@ -14,8 +14,18 @@ set -u
 DOMAIN="${1:-${APP_DOMAIN:-}}"
 if [ -z "$DOMAIN" ]; then
   echo "Aufruf: sh scripts/preflight.sh <domain>"
+  echo
+  echo "Umgebungsvariablen:"
+  echo "  PROXY_MODE=own|behind   own   = eigener Caddy, Ports 80/443 müssen frei sein"
+  echo "                          behind= vorhandener Proxy davor, 80/443 dürfen belegt sein"
+  echo "  APP_PORT=<port>         Port, auf dem die App am Host lauschen soll"
   exit 2
 fi
+
+# own    = dieser Stack bringt seinen eigenen Caddy mit (Ports 80/443 nötig)
+# behind = auf dem Server läuft schon ein Reverse Proxy (Variante B)
+PROXY_MODE="${PROXY_MODE:-own}"
+APP_PORT="${APP_PORT:-3000}"
 
 fail=0
 ok()   { printf '  \033[32mok\033[0m    %s\n' "$1"; }
@@ -120,6 +130,9 @@ else
 fi
 
 # --- 3) Ports frei bzw. erreichbar --------------------------------------
+HAVE_PORT_TOOL=1
+command -v ss >/dev/null 2>&1 || command -v netstat >/dev/null 2>&1 || HAVE_PORT_TOOL=0
+
 port_user() {
   if command -v ss >/dev/null 2>&1; then
     ss -ltnp 2>/dev/null | awk -v p=":$1\$" '$4 ~ p {print $6; exit}'
@@ -127,22 +140,59 @@ port_user() {
     netstat -ltnp 2>/dev/null | awk -v p=":$1\$" '$4 ~ p {print $7; exit}'
   fi
 }
-for p in 80 443; do
-  who=$(port_user "$p")
-  if [ -z "$who" ]; then
-    ok "Port $p ist frei — Caddy kann ihn belegen"
-  else
-    case "$who" in
-      *caddy*|*docker*|*mailing*)
-        warn "Port $p ist belegt von: $who (evtl. ein früherer Start dieses Stacks)" ;;
-      *)
-        bad "Port $p ist belegt von: $who"
-        echo "        Entweder diesen Dienst stoppen, oder OHNE --profile caddy starten"
-        echo "        und den vorhandenen Proxy auf 127.0.0.1:${APP_PORT:-3000} zeigen lassen"
-        echo "        (DEPLOY.md, Variante B)." ;;
-    esac
-  fi
-done
+
+# Ohne Werkzeug liefert port_user immer "" - das sähe wie "Port frei" aus.
+# Diesen Fall sichtbar machen, statt eine falsche Entwarnung zu geben.
+if [ "$HAVE_PORT_TOOL" -eq 0 ]; then
+  bad "Weder 'ss' noch 'netstat' vorhanden — Ports können nicht geprüft werden"
+  echo "        Auf Debian/Ubuntu:  apt-get install -y iproute2"
+fi
+if [ "$PROXY_MODE" = "behind" ]; then
+  # Variante B: ein vorhandener Proxy hält 80/443. Das ist hier erwünscht -
+  # die Ports werden nur informativ ausgegeben.
+  for p in 80 443; do
+    who=$(port_user "$p")
+    if [ -n "$who" ]; then
+      ok "Port $p wird vom vorhandenen Proxy gehalten: $who"
+    else
+      warn "Port $p ist frei — läuft der Reverse Proxy gerade nicht? Ohne ihn ist die App von außen nicht erreichbar."
+    fi
+  done
+else
+  for p in 80 443; do
+    who=$(port_user "$p")
+    if [ -z "$who" ]; then
+      ok "Port $p ist frei — Caddy kann ihn belegen"
+    else
+      case "$who" in
+        *mailing-caddy*)
+          warn "Port $p ist belegt von: $who (früherer Start dieses Stacks)" ;;
+        *)
+          bad "Port $p ist belegt von: $who"
+          echo "        Dieser Stack würde mit 'address already in use' scheitern."
+          echo "        Richtig ist hier Variante B: OHNE --profile caddy starten und den"
+          echo "        vorhandenen Proxy auf 127.0.0.1:$APP_PORT zeigen lassen."
+          echo "        Erneut prüfen mit:  PROXY_MODE=behind sh scripts/preflight.sh $DOMAIN" ;;
+      esac
+    fi
+  done
+fi
+
+# --- Port der App selbst: muss in JEDEM Modus frei sein -------------------
+who=$(port_user "$APP_PORT")
+if [ -z "$who" ]; then
+  ok "Port $APP_PORT ist frei — die App kann dort lauschen"
+else
+  case "$who" in
+    *mailing-app*)
+      warn "Port $APP_PORT ist belegt von: $who (früherer Start dieses Stacks)" ;;
+    *)
+      bad "Port $APP_PORT ist schon belegt von: $who"
+      echo "        Auf diesem Server läuft dort bereits etwas anderes. Einen freien Port"
+      echo "        wählen und in .env als APP_PORT eintragen, z.B. APP_PORT=\"3020\"."
+      echo "        Freie Ports finden:  for p in \$(seq 3020 3040); do ss -ltn | grep -q \":\$p\$\" || echo \$p; done | head -5" ;;
+  esac
+fi
 
 # --- 4) Ports von außen erreichbar? -------------------------------------
 # Nur als Hinweis: eine Firewall davor sieht man von innen nicht.
