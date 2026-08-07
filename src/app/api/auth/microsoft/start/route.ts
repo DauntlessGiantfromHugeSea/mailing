@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
   authorizeUrl,
+  configProblem,
   microsoftConfig,
   randomUrlSafe,
 } from "@/lib/authMicrosoft";
@@ -26,6 +27,12 @@ export async function GET(): Promise<Response> {
       "Microsoft-Anmeldung ist nicht konfiguriert (MICROSOFT_TENANT_ID / _CLIENT_ID / _CLIENT_SECRET fehlen)."
     );
   }
+
+  // Konfiguration prüfen, bevor der Benutzer zu Microsoft geschickt wird -
+  // sonst bekommt er dort eine AADSTS-Meldung, aus der die eigentliche Ursache
+  // nur schwer hervorgeht.
+  const problem = configProblem(cfg);
+  if (problem) return backWithError("/login", problem);
 
   const state = randomUrlSafe();
   const nonce = randomUrlSafe();

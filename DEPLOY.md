@@ -338,10 +338,35 @@ Mailadresse und die Anmeldung bricht mit einer entsprechenden Meldung ab.
 ### 4. In die `.env`
 
 ```bash
-MICROSOFT_TENANT_ID="<Verzeichnis-ID>"
-MICROSOFT_CLIENT_ID="<Anwendungs-ID>"
-MICROSOFT_CLIENT_SECRET="<Clientschlüssel>"
-MICROSOFT_ALLOWED_DOMAINS="fb-eng.de,rss-fb.com"
+# Werte OHNE spitze Klammern einsetzen - die Klammern unten sind keine
+# Platzhalter-Syntax, hier stehen Beispielwerte.
+MICROSOFT_TENANT_ID="e47a6b12-0ae0-4db5-a6ee-ec4186b11bb0"
+MICROSOFT_CLIENT_ID="670bb529-17d4-49c9-aed1-9d79198ee1da"
+MICROSOFT_CLIENT_SECRET="abC8Q~beispielwert.nichtDieGeheimnisID"
+MICROSOFT_ALLOWED_DOMAINS="fb-eng.de,fb-akademie.de"
+```
+
+> Die beiden GUIDs sind **verschiedene Werte** und stehen im Portal direkt
+> untereinander:
+> **Verzeichnis-ID (Mandant)** = das Firmenverzeichnis,
+> **Anwendungs-ID (Client)** = diese App-Registrierung.
+> Vertauscht man sie, meldet Microsoft `AADSTS90002: Tenant not found`.
+>
+> Beim Clientschlüssel wird der **Wert** gebraucht, nicht die *Geheimnis-ID*.
+
+Vor dem ersten Anmeldeversuch prüfen:
+
+```bash
+sh scripts/check-microsoft.sh
+```
+
+Das Skript vergleicht die Werte gegen Microsofts Discovery-Endpunkt und meldet
+verwechselte IDs, nicht existierende Verzeichnisse und Domains, die nicht zum
+Verzeichnis gehören. Die eigene Verzeichnis-ID lässt sich damit auch finden:
+
+```bash
+curl -s https://login.microsoftonline.com/DEINE-MAIL-DOMAIN/v2.0/.well-known/openid-configuration \
+  | grep -o '"issuer":"[^"]*"'
 ```
 
 Dann `docker compose up -d app`.

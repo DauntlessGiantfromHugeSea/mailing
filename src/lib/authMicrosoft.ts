@@ -31,11 +31,35 @@ export interface MicrosoftConfig {
   defaultRole: Role;
 }
 
+/**
+ * Raeumt einen aus der Anleitung kopierten Wert auf.
+ *
+ * Platzhalter werden in Dokumentationen oft als <Verzeichnis-ID> geschrieben.
+ * Bleiben die spitzen Klammern beim Einsetzen stehen, antwortet Microsoft mit
+ * "AADSTS900023: Specified tenant identifier ... is neither a valid DNS name",
+ * und die Ursache ist an der Meldung schwer zu erkennen. Da weder GUIDs noch
+ * Domainnamen noch Microsoft-Clientschluessel spitze Klammern oder
+ * Anfuehrungszeichen enthalten, koennen sie gefahrlos entfernt werden.
+ */
+function cleanEnvValue(raw: string | undefined): string {
+  let v = (raw ?? "").trim();
+  // Umschliessende Anfuehrungszeichen (falls die .env doppelt gequotet wurde).
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    v = v.slice(1, -1).trim();
+  }
+  // Umschliessende spitze Klammern - nur als Paar, um echte Werte nicht zu
+  // beschaedigen.
+  if (v.startsWith("<") && v.endsWith(">")) {
+    v = v.slice(1, -1).trim();
+  }
+  return v;
+}
+
 /** null = Microsoft-Login ist nicht konfiguriert. */
 export function microsoftConfig(): MicrosoftConfig | null {
-  const tenantId = process.env.MICROSOFT_TENANT_ID?.trim();
-  const clientId = process.env.MICROSOFT_CLIENT_ID?.trim();
-  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim();
+  const tenantId = cleanEnvValue(process.env.MICROSOFT_TENANT_ID);
+  const clientId = cleanEnvValue(process.env.MICROSOFT_CLIENT_ID);
+  const clientSecret = cleanEnvValue(process.env.MICROSOFT_CLIENT_SECRET);
   if (!tenantId || !clientId || !clientSecret) return null;
 
   const roleRaw = (process.env.MICROSOFT_DEFAULT_ROLE ?? "VIEWER").trim().toUpperCase();
@@ -53,6 +77,37 @@ export function microsoftConfig(): MicrosoftConfig | null {
     autoProvision: process.env.MICROSOFT_AUTO_PROVISION === "1",
     defaultRole,
   };
+}
+
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+
+/**
+ * Prueft die Konfiguration auf offensichtliche Fehler, BEVOR zu Microsoft
+ * weitergeleitet wird. Ohne diese Pruefung landet der Benutzer auf einer
+ * AADSTS-Fehlerseite, deren Meldung die eigentliche Ursache (etwa ein
+ * mitkopierter Platzhalter) nur indirekt erkennen laesst.
+ *
+ * null = keine Auffaelligkeit.
+ */
+export function configProblem(cfg: MicrosoftConfig): string | null {
+  const multiTenant = ["common", "organizations", "consumers"].includes(
+    cfg.tenantId.toLowerCase()
+  );
+
+  if (!multiTenant && !GUID_RE.test(cfg.tenantId) && !DOMAIN_RE.test(cfg.tenantId)) {
+    return `MICROSOFT_TENANT_ID ist ungültig: "${cfg.tenantId}". Erwartet wird die Verzeichnis-ID als GUID (z. B. 670bb529-17d4-49c9-aed1-9d79198ee1da) oder ein Domainname. Häufigste Ursache: beim Kopieren aus der Anleitung sind spitze Klammern oder Anführungszeichen mitgekommen.`;
+  }
+  if (multiTenant && cfg.allowedDomains.length === 0) {
+    return `MICROSOFT_TENANT_ID ist auf "${cfg.tenantId}" gesetzt. Damit könnte sich jedes Microsoft-Konto anmelden. Bitte die konkrete Verzeichnis-ID eintragen, oder wenigstens MICROSOFT_ALLOWED_DOMAINS setzen.`;
+  }
+  if (!GUID_RE.test(cfg.clientId)) {
+    return `MICROSOFT_CLIENT_ID ist ungültig: "${cfg.clientId}". Erwartet wird die Anwendungs-ID als GUID — ebenfalls ohne spitze Klammern.`;
+  }
+  if (cfg.clientSecret.length < 8) {
+    return "MICROSOFT_CLIENT_SECRET sieht zu kurz aus. Erwartet wird der Wert des Clientschlüssels, nicht dessen ID (im Portal gibt es beides — gebraucht wird die Spalte „Wert“).";
+  }
+  return null;
 }
 
 /** Ist die Anmeldung per Passwort erlaubt? Default ja. */
