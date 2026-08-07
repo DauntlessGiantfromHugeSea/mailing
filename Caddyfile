@@ -1,0 +1,50 @@
+# Reverse Proxy mit automatischem Let's-Encrypt-Zertifikat.
+#
+# Caddy holt und erneuert das Zertifikat selbst (HTTP-01-Challenge über Port
+# 80). Voraussetzungen:
+#   - Der A-Record der Domain zeigt auf diesen Server.
+#   - Port 80 UND 443 sind von außen erreichbar.
+#
+# Läuft schon ein anderer Webserver auf 80/443, darf dieser Caddy nicht
+# starten — siehe DEPLOY.md, Variante B.
+#
+# Bewusst schlank gehalten: jede zusätzliche Direktive ist ein möglicher
+# Startfehler, und ein Caddy, der nicht startet, nimmt die ganze Seite mit.
+# Vor dem ersten Start prüfen mit:
+#   docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# Die App lauscht im internen Compose-Netz, nicht am Host.
+	reverse_proxy app:3000
+
+	header {
+		# HSTS: erst sinnvoll, wenn die Domain dauerhaft auf HTTPS bleibt.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Kein access.log: der Abmeldelink trägt den Token im Query-String
+	# (/abmelden?token=…). Ein Zugriffslog würde damit zeilenweise gültige
+	# Abmelde-Tokens konkreter Empfänger mitschreiben.
+	#
+	# Caddy loggt ohne diesen Block weiterhin Laufzeit- und Fehlermeldungen
+	# nach stdout — genau das, was für die Fehlersuche gebraucht wird:
+	#   docker compose logs -f caddy
+	#
+	# Wer Zugriffslogs braucht, muss den Token filtern, z. B.:
+	#   log {
+	#       output file /var/log/caddy/access.log
+	#       format filter {
+	#           wrap json
+	#           fields {
+	#               request>uri query { replace token REDACTED }
+	#           }
+	#       }
+	#   }
+	# Diese Filter-Syntax vor dem Einsatz mit `caddy validate` prüfen.
+}

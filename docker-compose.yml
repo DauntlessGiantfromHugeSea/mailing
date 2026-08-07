@@ -27,7 +27,8 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-mailing}:${POSTGRES_PASSWORD}@mailing-db:5432/${POSTGRES_DB:-mailing}?schema=public"
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?bitte in .env setzen (64 Hex-Zeichen)}
       SESSION_SECRET: ${SESSION_SECRET:?bitte in .env setzen (min. 32 Zeichen)}
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      # Muss die öffentliche HTTPS-Adresse sein — landet in den Abmeldelinks.
+      APP_URL: ${APP_URL:?bitte in .env setzen, z.B. https://mailing.example.com}
       HOSTINGER_API_TOKEN: ${HOSTINGER_API_TOKEN:-}
       CRON_SECRET: ${CRON_SECRET:-}
       NODE_ENV: production
@@ -36,8 +37,10 @@ services:
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe!2026}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Administrator}
+    # Nur auf localhost gebunden: der Zugriff von außen läuft über den Proxy.
+    # Zum Debuggen:  curl -I http://127.0.0.1:3000/login
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     networks: [internal]
 
   # Eigener Prozess, damit der Versand nicht von HTTP-Requests abhängt.
@@ -54,9 +57,41 @@ services:
     command: ["node", "dist/worker/main.js"]
     networks: [internal]
 
+  # ---------------------------------------------------------------------------
+  # Reverse Proxy mit automatischem Let's-Encrypt-Zertifikat.
+  #
+  # Nur aktiv, wenn ausdrücklich angefordert:
+  #     docker compose --profile caddy up -d
+  #
+  # Läuft auf dem Server schon ein Webserver auf Port 80/443, würde dieser
+  # Container beim Start mit "address already in use" scheitern. Dann NICHT das
+  # Profil benutzen, sondern den vorhandenen Proxy auf 127.0.0.1:3000 zeigen
+  # lassen — siehe DEPLOY.md, Variante B.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: mailing-caddy
+    restart: unless-stopped
+    profiles: [caddy]
+    depends_on:
+      app: { condition: service_started }
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?bitte in .env setzen, z.B. mailing.example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # Zertifikate — dieses Volume nicht löschen
+      - caddy_config:/config
+    networks: [internal]
+
 networks:
   internal:
     driver: bridge
 
 volumes:
   db_data:
+  caddy_data:
+  caddy_config:

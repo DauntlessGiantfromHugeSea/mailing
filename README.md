@@ -115,15 +115,22 @@ npm run worker       # in einem ZWEITEN Terminal — ohne ihn wird nichts gesend
 > Der Worker ist ein eigener Prozess. Ohne ihn werden Kampagnen geplant, aber
 > nie versendet.
 
-### Docker
+### Docker / Server
+
+Vollständige Anleitung inklusive Domain und SSL: **[DEPLOY.md](DEPLOY.md)**.
 
 ```bash
-cp .env.example .env    # POSTGRES_PASSWORD, Secrets etc. setzen
-RUN_SEED_ON_START=1 docker compose up -d --build
+cp .env.example .env               # Secrets setzen, APP_URL + APP_DOMAIN
+sh scripts/preflight.sh <domain>   # DNS, Ports und .env prüfen
+RUN_SEED_ON_START=1 docker compose --profile caddy up -d --build
 # danach RUN_SEED_ON_START wieder auf 0 setzen
 ```
 
-Compose startet drei Container: `db`, `app` und `worker`.
+Compose startet `db`, `app`, `worker` und - mit `--profile caddy` - einen
+Reverse Proxy, der das Let's-Encrypt-Zertifikat selbst holt und erneuert.
+Läuft auf dem Server schon ein Webserver auf Port 80/443, das Profil weglassen
+und den vorhandenen Proxy auf `127.0.0.1:3000` zeigen lassen (DEPLOY.md,
+Variante B).
 
 ---
 

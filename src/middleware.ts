@@ -20,13 +20,50 @@ export function middleware(req: NextRequest): NextResponse {
   }
 
   if (!req.cookies.get(SESSION_COOKIE)?.value) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = "";
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(loginUrl(req));
   }
 
   return NextResponse.next();
+}
+
+/**
+ * Baut die absolute Login-URL.
+ *
+ * Die Middleware MUSS eine absolute URL zurückgeben - ein relativer
+ * Location-Header wird von Next.js als NextURL geparst und wirft
+ * "Invalid URL". Hinter einem Reverse Proxy kennt `req.nextUrl` aber nur die
+ * interne Verbindung (http://app:3000), nicht die öffentliche Adresse. Ohne
+ * Korrektur würde der Browser auf http://app:3000/login geschickt.
+ *
+ * Deshalb werden `X-Forwarded-Proto` und `X-Forwarded-Host` bevorzugt, die
+ * Caddy und nginx setzen. Fehlen sie (lokale Entwicklung), bleibt es bei
+ * `req.nextUrl`.
+ */
+function loginUrl(req: NextRequest): URL {
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  url.search = "";
+
+  // Bei mehreren Proxys stehen die Werte kommagetrennt; der erste ist der
+  // ursprüngliche Client-Request.
+  const first = (v: string | null): string | null => v?.split(",")[0]?.trim() || null;
+  const proto = first(req.headers.get("x-forwarded-proto"));
+  const host = first(req.headers.get("x-forwarded-host")) ?? first(req.headers.get("host"));
+
+  if (proto === "https" || proto === "http") url.protocol = `${proto}:`;
+  if (host) {
+    if (host.includes(":")) {
+      // Host bringt einen eigenen Port mit (lokale Entwicklung, z.B.
+      // "127.0.0.1:3000") - host setzt dann Hostname und Port zusammen.
+      url.host = host;
+    } else {
+      // Ohne Port im Header: den internen Port explizit entfernen, sonst
+      // bliebe er stehen und der Browser landete auf mailing.example.com:3000.
+      url.hostname = host;
+      url.port = "";
+    }
+  }
+  return url;
 }
 
 export const config = {
