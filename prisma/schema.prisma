@@ -1,0 +1,323 @@
+// Datenmodell fuer den randomisierten Drip-Mailversand.
+//
+// Grundidee (wie instantly.ai): Beim Start einer Kampagne wird NICHT sofort
+// gesendet. Statt dessen bekommt jeder Empfaenger eine eigene SendJob-Zeile mit
+// einem individuellen `scheduledAt`-Zeitpunkt. Die Reihenfolge ist zufaellig
+// gemischt, die Abstaende liegen im Minutentakt mit Jitter. Ein Worker holt
+// faellige Jobs und versendet sie einzeln.
+//
+// Personenbezogene Felder (E-Mail, Name, Firma, SMTP-Passwoerter) liegen
+// AES-256-GCM-verschluesselt in der DB. Fuer Lookups gibt es Blind-Index-
+// Hashes (emailHash).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- Benutzer
+
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(VIEWER)
+  active       Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  campaigns Campaign[]
+  auditLogs AuditLog[]
+}
+
+// ------------------------------------------------------------ Absender/Inbox
+
+// Ein Sender ist genau ein Hostinger-Postfach mit SMTP-Zugang. Mehrere Sender
+// erlauben Inbox-Rotation: die Last verteilt sich, jedes Postfach bleibt unter
+// seinem Tageslimit.
+model Sender {
+  id       String @id @default(cuid())
+  label    String // Anzeigename in der UI
+  fromName String // "FB-Akademie" -> From: FB-Akademie <adresse>
+  email    String // Absenderadresse (Klartext, ist ohnehin oeffentlich)
+  replyTo  String?
+
+  // SMTP-Zugang. Passwort verschluesselt.
+  smtpHost     String  @default("smtp.hostinger.com")
+  smtpPort     Int     @default(465)
+  smtpSecure   Boolean @default(true)
+  smtpUser     String
+  smtpPassEnc  String
+
+  active Boolean @default(true)
+
+  // Tageslimit. Warmup rampt das effektive Limit langsam hoch, damit neue
+  // Postfaecher nicht sofort mit Volumen auffallen.
+  dailyLimit    Int      @default(40)
+  warmupEnabled Boolean  @default(true)
+  warmupStart   Int      @default(10) // Mails am ersten Tag
+  warmupStep    Int      @default(5)  // Zuwachs pro Tag
+  warmupStartedAt DateTime?
+
+  // Verknuepfung zur Hostinger-API (aus /api/mail/v1/... importiert)
+  hostingerOrderId   String?
+  hostingerMailboxId String?
+
+  // Ergebnis des letzten Verbindungstests
+  lastCheckAt    DateTime?
+  lastCheckOk    Boolean?
+  lastCheckError String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs      SendJob[]
+  campaigns CampaignSender[]
+
+  @@index([active])
+}
+
+// ---------------------------------------------------------------- Kontakte
+
+enum ContactStatus {
+  ACTIVE
+  UNSUBSCRIBED
+  BOUNCED
+  COMPLAINED
+  SUPPRESSED
+}
+
+model Contact {
+  id        String        @id @default(cuid())
+  email     String // verschluesselt
+  emailHash String        @unique // Blind-Index fuer Lookup/Dedupe
+  firstName String? // verschluesselt
+  lastName  String? // verschluesselt
+  company   String? // verschluesselt
+  // Freie Zusatzfelder als JSON-Objekt, nutzbar als {{platzhalter}}
+  customFields String?
+  status    ContactStatus @default(ACTIVE)
+  tags      String? // JSON-Array
+  source    String? // "csv" | "manual" | "hostinger-reach"
+
+  unsubscribeToken String  @unique
+  unsubscribedAt   DateTime?
+  bounceCount      Int     @default(0)
+
+  // Verknuepfung zu Hostinger Reach
+  reachContactUuid String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships ListMembership[]
+  jobs        SendJob[]
+
+  @@index([status])
+}
+
+model ContactList {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships ListMembership[]
+  campaigns   Campaign[]
+}
+
+model ListMembership {
+  id        String   @id @default(cuid())
+  listId    String
+  contactId String
+  addedAt   DateTime @default(now())
+
+  list    ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, contactId])
+  @@index([contactId])
+}
+
+// Globale Sperrliste. Greift unabhaengig von der Kontaktliste, damit eine
+// Abmeldung nie durch einen CSV-Reimport ueberschrieben wird.
+model Suppression {
+  id        String   @id @default(cuid())
+  emailHash String   @unique
+  reason    String // "unsubscribe" | "bounce" | "complaint" | "manual"
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------- Kampagnen
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+model Campaign {
+  id       String         @id @default(cuid())
+  name     String
+  subject  String
+  bodyHtml String
+  bodyText String?
+  status   CampaignStatus @default(DRAFT)
+
+  listId String?
+  list   ContactList? @relation(fields: [listId], references: [id], onDelete: SetNull)
+  // Optionaler Tag-Filter (JSON-Array). Leer = alle Kontakte der Liste.
+  tagFilter String?
+
+  // --- Taktung ---
+  // Basisabstand zwischen zwei Mails in Minuten ...
+  intervalMinutes Int @default(3)
+  // ... plus/minus Jitter in Prozent. 60 => 3min +-60% => 1,2min .. 4,8min.
+  jitterPercent   Int @default(60)
+  // Reihenfolge der Empfaenger zufaellig mischen.
+  shuffleRecipients Boolean @default(true)
+  // Seed fuer reproduzierbares Mischen/Jittern.
+  randomSeed String?
+
+  // --- Sendefenster ---
+  timezone   String @default("Europe/Berlin")
+  // Wochentage als JSON-Array, 1=Montag .. 7=Sonntag.
+  sendDays   String @default("[1,2,3,4,5]")
+  // Minuten seit Mitternacht in der Kampagnen-Zeitzone.
+  windowStartMinute Int @default(540)  // 09:00
+  windowEndMinute   Int @default(1020) // 17:00
+
+  startAt DateTime?
+
+  // --- Zaehler ---
+  recipientCount Int @default(0)
+  sentCount      Int @default(0)
+  failedCount    Int @default(0)
+  skippedCount   Int @default(0)
+
+  scheduledAt DateTime? // wann geplant wurde
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs    SendJob[]
+  senders CampaignSender[]
+
+  @@index([status])
+}
+
+// Welche Absender darf diese Kampagne benutzen? Leer = alle aktiven.
+model CampaignSender {
+  id         String @id @default(cuid())
+  campaignId String
+  senderId   String
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sender   Sender   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, senderId])
+}
+
+// ------------------------------------------------------------- Sende-Jobs
+
+enum JobStatus {
+  PENDING // eingeplant, wartet auf scheduledAt
+  SENDING // wird gerade vom Worker verarbeitet
+  SENT
+  FAILED
+  SKIPPED // z.B. Kontakt inzwischen abgemeldet
+  CANCELLED
+}
+
+// Eine Zeile = eine Mail an einen Empfaenger zu einem geplanten Zeitpunkt.
+// Das ist die Warteschlange, die den Minutentakt abbildet.
+model SendJob {
+  id          String    @id @default(cuid())
+  campaignId  String
+  contactId   String
+  senderId    String?
+  status      JobStatus @default(PENDING)
+
+  // Geplanter Sendezeitpunkt (UTC). Traegt die Randomisierung.
+  scheduledAt DateTime
+  // Position in der gemischten Reihenfolge (0-basiert).
+  sequence    Int
+
+  attempts Int       @default(0)
+  sentAt   DateTime?
+  messageId String?
+  error     String?
+
+  // Status laut Hostinger-Outbound-Log (Successful | Failed) - via API abgeglichen.
+  providerStatus     String?
+  providerCheckedAt  DateTime?
+
+  lockedAt DateTime? // Sichtbarkeits-Timeout gegen doppelte Verarbeitung
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sender   Sender?  @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, contactId])
+  @@index([status, scheduledAt])
+  @@index([campaignId, status])
+  @@index([senderId, sentAt])
+}
+
+// ------------------------------------------------------------------ System
+
+// Verhindert, dass mehrere Worker-Instanzen gleichzeitig ticken.
+model WorkerLock {
+  id         String   @id
+  holder     String
+  acquiredAt DateTime @default(now())
+  expiresAt  DateTime
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  action   String
+  entity   String?
+  entityId String?
+  detail   String?
+  userId   String?
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Key/Value-Einstellungen (Hostinger-Token, Standardwerte). Werte, die
+// geheim sind, werden verschluesselt abgelegt.
+model Setting {
+  key       String   @id
+  value     String
+  encrypted Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}

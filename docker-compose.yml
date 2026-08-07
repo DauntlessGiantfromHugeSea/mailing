@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mailing-db
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mailing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?bitte in .env setzen}
+      POSTGRES_DB: ${POSTGRES_DB:-mailing}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mailing} -d ${POSTGRES_DB:-mailing}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: { context: ., dockerfile: Dockerfile }
+    image: mailing:latest
+    container_name: mailing-app
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment: &app_env
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-mailing}:${POSTGRES_PASSWORD}@mailing-db:5432/${POSTGRES_DB:-mailing}?schema=public"
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?bitte in .env setzen (64 Hex-Zeichen)}
+      SESSION_SECRET: ${SESSION_SECRET:?bitte in .env setzen (min. 32 Zeichen)}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      HOSTINGER_API_TOKEN: ${HOSTINGER_API_TOKEN:-}
+      CRON_SECRET: ${CRON_SECRET:-}
+      NODE_ENV: production
+      # Beim allerersten Start auf 1 setzen, danach wieder entfernen.
+      RUN_SEED_ON_START: ${RUN_SEED_ON_START:-0}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe!2026}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Administrator}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    networks: [internal]
+
+  # Eigener Prozess, damit der Versand nicht von HTTP-Requests abhängt.
+  # Nur EINE Instanz betreiben — das DB-Lock verhindert Doppelversand, aber
+  # mehrere Worker bringen keinen Nutzen, da bewusst sequenziell gesendet wird.
+  worker:
+    image: mailing:latest
+    container_name: mailing-worker
+    restart: unless-stopped
+    depends_on:
+      app: { condition: service_started }
+      db: { condition: service_healthy }
+    environment: *app_env
+    command: ["node", "dist/worker/main.js"]
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  db_data:

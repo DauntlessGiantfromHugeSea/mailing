@@ -1,0 +1,52 @@
+{
+  "name": "mailing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Randomisierter Drip-Mailversand über Hostinger (SMTP + Hostinger API)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build && npm run build:worker",
+    "build:worker": "tsc -p tsconfig.worker.json",
+    "start": "next start",
+    "worker": "tsx --env-file-if-exists=.env worker/main.ts",
+    "worker:dev": "tsx watch --env-file-if-exists=.env worker/main.ts",
+    "worker:prod": "node dist/worker/main.js",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "tsx --env-file-if-exists=.env prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^2.4.3",
+    "clsx": "^2.1.1",
+    "jose": "^5.9.6",
+    "luxon": "^3.5.0",
+    "next": "14.2.18",
+    "nodemailer": "^6.10.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/luxon": "^3.4.2",
+    "@types/node": "^22.9.0",
+    "@types/nodemailer": "^6.4.23",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.18",
+    "postcss": "^8.4.49",
+    "prisma": "^5.22.0",
+    "tailwindcss": "^3.4.15",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

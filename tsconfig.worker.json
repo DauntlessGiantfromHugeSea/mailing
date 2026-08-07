@@ -1,0 +1,21 @@
+{
+  // Uebersetzt den Worker-Prozess nach dist/, damit er im Container ohne tsx
+  // laeuft. Der Import-Graph von worker/main.ts beruehrt bewusst keine
+  // Next.js-Module (next/headers o.ae.) - nur reine Node-Bibliotheken.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": false,
+    "noEmit": false,
+    "incremental": false
+  },
+  "include": ["worker/main.ts"]
+}

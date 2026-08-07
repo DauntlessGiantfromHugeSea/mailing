@@ -1,0 +1,413 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+summary::-webkit-details-marker { display: none; }
+summary { list-style: none; }
+
+/* Kampagnen-Formular: Felder je nach gewaehltem Modus ein-/ausblenden - ohne JS. */
+.campaign-form:has(input[name="scheduleMode"][value="now"]:checked) .only-later { display: none; }
+.campaign-form:has(input[name="recipientMode"][value="list"]:checked) .only-all { display: none; }
+.campaign-form:has(input[name="recipientMode"][value="all"]:checked) .only-list { display: none; }
+
+/* Mobile: Tabellen-Karten duerfen horizontal scrollen statt clippen */
+@media (max-width: 768px) {
+  .card.overflow-hidden { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table { min-width: 640px; }
+  .input { font-size: 16px; }
+  .btn { @apply py-2.5 px-3.5; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .max-w-7xl.mx-auto { padding-left: 16px; padding-right: 16px; }
+  h1.text-2xl, h1.text-3xl { font-size: 22px; line-height: 1.2; }
+  .btn-row { padding: 8px 12px; }
+}
+
+@media (max-width: 420px) {
+  .btn { font-size: 13px; padding-left: 12px; padding-right: 12px; }
+  .card { border-radius: 14px; }
+  .menu-panel { right: 12px !important; left: 12px !important; min-width: 0 !important; }
+}
+
+.nav-scroll::-webkit-scrollbar { display: none; }
+.nav-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+
+@media (hover: none) and (pointer: coarse) {
+  a.btn-primary, a.btn-secondary, a.btn-danger, button.btn-primary, button.btn-secondary, button.btn-danger {
+    min-height: 40px;
+  }
+}
+
+@supports (padding: env(safe-area-inset-top)) {
+  html, body { padding-top: env(safe-area-inset-top); }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+  .glass, .glass-strong { backdrop-filter: none !important; background: white !important; }
+}
+
+/* ============================================================
+   Theme — Liquid Glass (Apple-inspiriert)
+   ============================================================ */
+
+:root {
+  --bg-base: #eef2f5;
+  --bg-tint-1: rgba(0, 126, 128, 0.08);
+  --bg-tint-2: rgba(99, 102, 241, 0.06);
+  --bg-tint-3: rgba(236, 72, 153, 0.04);
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-bg-strong: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-stroke: rgba(15, 23, 42, 0.06);
+  --text: #0f172a;
+  --text-muted: #475569;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 30px -18px rgba(15, 23, 42, 0.18);
+  --shadow-card-hover: 0 1px 2px rgba(15, 23, 42, 0.05), 0 18px 40px -20px rgba(15, 23, 42, 0.22);
+}
+
+html, body {
+  min-height: 100%;
+  color: var(--text);
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(900px 600px at 8% -10%, var(--bg-tint-1), transparent 60%),
+    radial-gradient(700px 500px at 92% 0%, var(--bg-tint-2), transparent 65%),
+    radial-gradient(800px 600px at 60% 110%, var(--bg-tint-3), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Glas-Flaeche: halbtransparent, blurred Hintergrund, feine Helligkeitsborder oben */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: saturate(1.4) blur(20px);
+  -webkit-backdrop-filter: saturate(1.4) blur(20px);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--shadow-card), inset 0 1px 0 var(--glass-border);
+}
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: saturate(1.5) blur(28px);
+  -webkit-backdrop-filter: saturate(1.5) blur(28px);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--shadow-card), inset 0 1px 0 var(--glass-border);
+}
+
+.card {
+  @apply rounded-2xl;
+  background: var(--glass-bg-strong);
+  backdrop-filter: saturate(1.4) blur(20px);
+  -webkit-backdrop-filter: saturate(1.4) blur(20px);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--shadow-card), inset 0 1px 0 var(--glass-border);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.card:hover { box-shadow: var(--shadow-card-hover); }
+
+/* Buttons */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  letter-spacing: -0.005em;
+}
+.btn:active { transform: translateY(0.5px); }
+
+.btn-primary {
+  @apply btn text-white disabled:opacity-50;
+  background: linear-gradient(180deg, rgb(0, 142, 144) 0%, rgb(0, 110, 112) 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 8px 20px -10px rgba(0, 126, 128, 0.55);
+}
+.btn-primary:hover { filter: brightness(1.05); }
+.btn-primary:active { filter: brightness(0.97); }
+
+.btn-secondary {
+  @apply btn text-slate-700;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(1.4) blur(14px);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.5) inset, 0 4px 14px -8px rgba(15,23,42,0.12);
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 126, 128, 0.35);
+  color: rgb(0, 76, 77);
+}
+
+.btn-danger {
+  @apply btn text-white;
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 8px 20px -10px rgba(220,38,38,0.6);
+}
+.btn-danger:hover { filter: brightness(1.05); }
+
+/* Inputs */
+.input {
+  @apply w-full rounded-xl px-3.5 py-2.5 text-sm;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  color: var(--text);
+}
+.input:focus {
+  outline: none;
+  border-color: rgb(0, 126, 128);
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(0, 126, 128, 0.15);
+}
+select.input { padding-right: 2.25rem; }
+textarea.input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.55; }
+
+.label {
+  @apply block text-xs font-semibold text-slate-600 mb-1.5;
+  letter-spacing: 0.01em;
+}
+.hint { @apply text-xs text-slate-500 mt-1.5 leading-relaxed; }
+
+/* Badges */
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+/* Tabellen */
+.table {
+  @apply w-full text-sm;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table thead th {
+  @apply text-left px-3.5 py-3 text-[11px] font-semibold text-slate-500 uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+.table tbody td {
+  @apply px-3.5 py-3;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.04);
+  vertical-align: middle;
+}
+.table tbody tr:last-child td { border-bottom: 0; }
+.table tbody tr { transition: background-color 0.15s ease; }
+.table tbody tr:hover { background: rgba(0, 126, 128, 0.045); }
+
+/* Status-Toasts */
+.toast-ok {
+  @apply rounded-2xl px-4 py-3 text-sm flex items-start gap-2;
+  background: rgba(220, 252, 231, 0.7);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #166534;
+}
+.toast-error {
+  @apply rounded-2xl px-4 py-3 text-sm flex items-start gap-2;
+  background: rgba(254, 226, 226, 0.7);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #991b1b;
+}
+.toast-warn {
+  @apply rounded-2xl px-4 py-3 text-sm flex items-start gap-2;
+  background: rgba(254, 243, 199, 0.7);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #92400e;
+}
+.toast-info {
+  @apply rounded-2xl px-4 py-3 text-sm flex items-start gap-2;
+  background: rgba(224, 242, 254, 0.7);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(14, 165, 233, 0.28);
+  color: #075985;
+}
+
+/* Liquid-Glass-Topbar Helper */
+.topbar {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: saturate(1.5) blur(20px);
+  -webkit-backdrop-filter: saturate(1.5) blur(20px);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  padding-top: env(safe-area-inset-top);
+}
+
+.action-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+@media (max-width: 768px) {
+  .action-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    margin-right: -16px;
+    padding-right: 16px;
+  }
+  .action-bar::-webkit-scrollbar { display: none; }
+  .action-bar { scrollbar-width: none; }
+  .action-bar > * { flex-shrink: 0; }
+}
+
+/* Kleine, dezente Action-Buttons in Tabellenzeilen */
+.btn-row {
+  @apply inline-flex items-center justify-center rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.btn-row:hover {
+  background: rgba(255, 255, 255, 0.95);
+  color: rgb(0, 76, 77);
+  border-color: rgba(0, 126, 128, 0.35);
+}
+.btn-row-danger:hover {
+  background: rgba(254, 226, 226, 0.7);
+  color: #991b1b;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+/* Dropdown-Menue (HTML <details>-basiert, kein JS noetig) */
+.menu { position: relative; }
+.menu > summary { cursor: pointer; }
+.menu[open] > .menu-panel { display: block; }
+.menu-panel {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 220px;
+  z-index: 30;
+  border-radius: 14px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: saturate(1.6) blur(22px);
+  -webkit-backdrop-filter: saturate(1.6) blur(22px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.25);
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #1f2937;
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+.menu-item:hover { background: rgba(0, 126, 128, 0.08); color: rgb(0, 76, 77); }
+.menu-item-danger { color: #991b1b; }
+.menu-item-danger:hover { background: rgba(239, 68, 68, 0.10); color: #7f1d1d; }
+.menu-divider { height: 1px; background: rgba(15, 23, 42, 0.06); margin: 4px 6px; }
+
+/* ============================================================
+   Mailing-spezifisch
+   ============================================================ */
+
+/* KPI-Kachel */
+.stat {
+  @apply card p-4 sm:p-5;
+}
+.stat-label {
+  @apply text-[11px] font-semibold uppercase text-slate-500;
+  letter-spacing: 0.06em;
+}
+.stat-value {
+  @apply mt-1.5 text-2xl font-semibold tabular-nums;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.stat-sub { @apply mt-1 text-xs text-slate-500; }
+
+/* Fortschrittsbalken einer Kampagne */
+.progress {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(0, 142, 144), rgb(0, 110, 112));
+  transition: width 0.4s ease;
+}
+
+/* Zeitplan-Zeitstrahl: eine Zeile pro geplanter Mail */
+.timeline { position: relative; padding-left: 22px; }
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(0,126,128,0.35), rgba(15,23,42,0.06));
+  border-radius: 2px;
+}
+.timeline-item { position: relative; padding: 7px 0; }
+.timeline-item::before {
+  content: "";
+  position: absolute;
+  left: -20px;
+  top: 13px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid rgb(0, 126, 128);
+  box-shadow: 0 0 0 3px rgba(0, 126, 128, 0.12);
+}
+.timeline-item.is-done::before { background: rgb(0, 126, 128); }
+.timeline-item.is-failed::before { border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,0.12); }
+.timeline-item.is-muted::before { border-color: #cbd5e1; box-shadow: none; }
+
+/* Monospace-Zeitangaben, damit Spalten nicht zappeln */
+.mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Wochentag-Auswahl als Chips (versteckte Checkbox + Label) */
+.daychip input { position: absolute; opacity: 0; pointer-events: none; }
+.daychip span {
+  @apply inline-flex items-center justify-center rounded-xl text-xs font-medium cursor-pointer select-none;
+  width: 44px;
+  padding: 8px 0;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  color: #475569;
+  transition: all 0.15s ease;
+}
+.daychip input:checked + span {
+  background: linear-gradient(180deg, rgb(0, 142, 144) 0%, rgb(0, 110, 112) 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 12px -6px rgba(0, 126, 128, 0.6);
+}
+.daychip input:focus-visible + span { box-shadow: 0 0 0 4px rgba(0, 126, 128, 0.18); }
+
+/* Segmentierte Auswahl (Radio-Gruppe als Tabs) */
+.segmented { display: inline-flex; padding: 3px; border-radius: 14px; background: rgba(15,23,42,0.05); gap: 3px; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented label { cursor: pointer; }
+.segmented label span {
+  @apply inline-flex items-center rounded-[11px] px-3.5 py-1.5 text-sm font-medium;
+  color: #475569;
+  transition: all 0.15s ease;
+}
+.segmented input:checked + span {
+  background: #fff;
+  color: rgb(0, 76, 77);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.08), 0 4px 12px -8px rgba(15,23,42,0.2);
+}
