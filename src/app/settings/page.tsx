@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { Shell } from "@/components/Shell";
 import { Toasts } from "@/components/Toasts";
-import { isAdmin } from "@/lib/rbac";
+import { isAdmin, roleLabel } from "@/lib/rbac";
 import { getDefaults, getSetting, SETTINGS } from "@/lib/settings";
 import { getApiToken } from "@/lib/hostinger";
 import { checkDeliverability, type DeliverabilityReport } from "@/lib/hostingerSync";
@@ -18,7 +18,16 @@ export default async function SettingsPage({
 }) {
   const s = await getSession();
   if (!s) redirect("/login");
-  if (!isAdmin(s)) redirect("/dashboard");
+  if (!isAdmin(s)) {
+    // Mit Begründung umleiten. Eine stille Umleitung sieht wie ein Fehler aus -
+    // der Benutzer sucht dann die Ursache bei sich oder in der App.
+    redirect(
+      "/dashboard?error=" +
+        encodeURIComponent(
+          `Die Einstellungen sind Administratoren vorbehalten. Deine Rolle ist ${roleLabel(s.role)}.`
+        )
+    );
+  }
 
   const [token, defaults, reachProfile, mailOrder, recentAudit] = await Promise.all([
     getApiToken(),

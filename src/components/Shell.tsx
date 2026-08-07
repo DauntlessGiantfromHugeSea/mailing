@@ -1,15 +1,19 @@
 import Link from "next/link";
+import type { Role } from "@prisma/client";
 import { Logo } from "./Logo";
 import { MobileMenu } from "./MobileMenu";
 import { roleLabel } from "@/lib/rbac";
 import type { SessionPayload } from "@/lib/session";
 
-const NAV = [
+// `roles` begrenzt die Sichtbarkeit. Vorher war "Einstellungen" für alle
+// sichtbar und leitete Nicht-Admins stillschweigend aufs Dashboard zurück -
+// das sah nach einem Fehler aus, statt nach fehlender Berechtigung.
+const NAV: { id: string; href: string; label: string; roles?: Role[] }[] = [
   { id: "dashboard", href: "/dashboard", label: "Dashboard" },
   { id: "campaigns", href: "/campaigns", label: "Kampagnen" },
   { id: "contacts", href: "/contacts", label: "Kontakte" },
   { id: "senders", href: "/senders", label: "Absender" },
-  { id: "settings", href: "/settings", label: "Einstellungen" },
+  { id: "settings", href: "/settings", label: "Einstellungen", roles: ["ADMIN"] },
 ];
 
 export function Shell({
@@ -21,6 +25,8 @@ export function Shell({
   active?: string;
   children: React.ReactNode;
 }) {
+  const nav = NAV.filter((n) => !n.roles || n.roles.includes(session.role));
+
   const initials = session.name
     .split(/\s+/)
     .map((p) => p[0])
@@ -33,14 +39,14 @@ export function Shell({
     <div className="min-h-screen flex flex-col">
       <header className="topbar sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3 sm:gap-6">
-          <MobileMenu name={session.name} role={session.role} active={active} nav={NAV} />
+          <MobileMenu name={session.name} role={session.role} active={active} nav={nav} />
 
           <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
             <Logo className="h-7" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-1 flex-1 nav-scroll overflow-x-auto">
-            {NAV.map((n) => (
+            {nav.map((n) => (
               <Link
                 key={n.id}
                 href={n.href}
@@ -74,9 +80,11 @@ export function Shell({
               <Link href="/account" className="menu-item">
                 Mein Konto &amp; Passwort
               </Link>
-              <Link href="/settings" className="menu-item">
-                Einstellungen
-              </Link>
+              {session.role === "ADMIN" && (
+                <Link href="/settings" className="menu-item">
+                  Einstellungen
+                </Link>
+              )}
               <div className="menu-divider" />
               <form action="/api/auth/logout" method="post">
                 <button className="menu-item menu-item-danger w-full">Abmelden</button>

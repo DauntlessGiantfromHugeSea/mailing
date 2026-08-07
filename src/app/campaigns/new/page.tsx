@@ -5,7 +5,7 @@ import { Shell } from "@/components/Shell";
 import { Toasts } from "@/components/Toasts";
 import { CampaignForm } from "@/components/CampaignForm";
 import { prisma } from "@/lib/db";
-import { canEdit } from "@/lib/rbac";
+import { canEdit, roleLabel } from "@/lib/rbac";
 import { getDefaults } from "@/lib/settings";
 import { loadSenderStats } from "@/lib/senders";
 
@@ -18,7 +18,14 @@ export default async function NewCampaignPage({
 }) {
   const s = await getSession();
   if (!s) redirect("/login");
-  if (!canEdit(s)) redirect("/campaigns");
+  if (!canEdit(s)) {
+    redirect(
+      "/campaigns?error=" +
+        encodeURIComponent(
+          `Kampagnen anlegen ist Bearbeitern vorbehalten. Deine Rolle ist ${roleLabel(s.role)}.`
+        )
+    );
+  }
 
   const [lists, senders, defaults, totalActiveContacts] = await Promise.all([
     prisma.contactList.findMany({
