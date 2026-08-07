@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { Shell } from "@/components/Shell";
@@ -46,8 +47,9 @@ export default async function SendersPage({
         <div>
           <h1 className="text-2xl font-semibold">Absender</h1>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Jeder Absender ist ein Hostinger-Postfach mit SMTP-Zugang. Mehrere Postfächer verteilen
-            das Volumen (Inbox-Rotation) und halten jedes einzelne unter seinem Tageslimit.
+            Jeder Absender ist ein Postfach mit SMTP-Zugang — bei Hostinger, all-inkl oder
+            einem anderen Anbieter. Mehrere Postfächer verteilen das Volumen (Inbox-Rotation) und
+            halten jedes einzelne unter seinem Tageslimit.
           </p>
         </div>
         {editable && hasToken && (
@@ -78,7 +80,22 @@ export default async function SendersPage({
           </p>
 
           {discovered.length === 0 ? (
-            <p className="text-sm text-slate-500">Keine Postfächer gefunden.</p>
+            <div className="toast-warn">
+              <span>
+                <strong>Keine Postfächer im Hostinger-Konto.</strong> Das ist kein Fehler dieser
+                Seite — es liegt dort keine Mail-Bestellung, also gibt es auch keine Postfächer zum
+                Einlesen. Was die API tatsächlich antwortet, steht unter{" "}
+                <Link href="/settings?diag=1" className="underline font-medium">
+                  Einstellungen → Konto prüfen
+                </Link>
+                .
+                <br />
+                <br />
+                Absender bitte unten unter <strong>„Absender manuell anlegen“</strong> eintragen.
+                Der Versand läuft über SMTP und ist nicht an Hostinger gebunden — ein Postfach bei
+                all-inkl funktioniert genauso.
+              </span>
+            </div>
           ) : (
             <div className="space-y-3">
               {discovered.map((mb) => (
@@ -285,6 +302,11 @@ export default async function SendersPage({
             <div>
               <label className="label">SMTP-Server</label>
               <input name="smtpHost" className="input" defaultValue="smtp.hostinger.com" />
+              <p className="hint">
+                Hostinger: <code>smtp.hostinger.com</code> · all-inkl:{" "}
+                <code>w0…​.kasserver.com</code> (steht im KAS beim Postfach) · andere Anbieter
+                entsprechend.
+              </p>
             </div>
             <div>
               <label className="label">Port</label>

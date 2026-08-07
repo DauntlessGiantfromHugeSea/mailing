@@ -111,6 +111,67 @@ export interface ReachProfile {
   [key: string]: unknown;
 }
 
+/**
+ * Zieht die echten Reach-Profile aus der Antwort von
+ * GET /api/reach/v1/profiles.
+ *
+ * Der Endpunkt liefert trotz seines Namens nicht die Profile selbst, sondern
+ * ein Array von ABONNEMENTS - jedes mit Feldern wie `limits`, `is_trial`,
+ * `expires_at`, `resource_id` und einer verschachtelten Liste `profiles`. Wird
+ * die aeussere Huelle als Profil behandelt, entsteht ein Eintrag ohne uuid und
+ * ohne Namen, und jeder Folgeaufruf (Kontakte, DNS-Status) laeuft ins Leere.
+ *
+ * Deshalb hier eine Ebene tiefer gehen, wenn ein Element eine `profiles`-Liste
+ * mitbringt. Die Feldnamen der Profile selbst werden tolerant gelesen, weil sie
+ * nicht streng dokumentiert sind.
+ */
+export function extractReachProfiles(raw: unknown): ReachProfile[] {
+  const out: ReachProfile[] = [];
+
+  const normalize = (p: Record<string, unknown>): ReachProfile | null => {
+    const uuid = firstString(p, ["uuid", "id", "profile_uuid", "profileUuid"]);
+    if (!uuid) return null;
+    return {
+      ...p,
+      uuid,
+      name: firstString(p, ["name", "title", "domain", "sender_name", "from_name"]) ?? undefined,
+      domain: firstString(p, ["domain", "sending_domain", "from_domain"]) ?? undefined,
+    };
+  };
+
+  for (const entry of itemsOf<Record<string, unknown>>(raw)) {
+    if (!entry || typeof entry !== "object") continue;
+
+    // Abonnement-Huelle: eine Ebene tiefer.
+    const nested = entry["profiles"];
+    if (Array.isArray(nested)) {
+      for (const p of nested) {
+        if (p && typeof p === "object") {
+          const n = normalize(p as Record<string, unknown>);
+          if (n) out.push(n);
+        }
+      }
+      continue;
+    }
+
+    const n = normalize(entry);
+    if (n) out.push(n);
+  }
+
+  // Dubletten ueber die uuid entfernen (ein Profil kann in mehreren
+  // Abonnements auftauchen).
+  const seen = new Set<string>();
+  return out.filter((p) => (seen.has(p.uuid) ? false : (seen.add(p.uuid), true)));
+}
+
+function firstString(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
 export interface ReachDnsStatus {
   // Feldnamen variieren; wir behandeln das Objekt tolerant.
   [key: string]: unknown;

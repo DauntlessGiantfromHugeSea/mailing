@@ -3,6 +3,7 @@ import {
   dailyLimitFromPlan,
   fetchAllPages,
   getHostingerClient,
+  extractReachProfiles,
   itemsOf,
   normalizeDnsStatus,
   type DnsCheckItem,
@@ -153,8 +154,8 @@ export async function checkDeliverability(profileUuid?: string): Promise<Deliver
   let profileName: string | null = null;
 
   if (!uuid) {
-    const profiles = await c.listReachProfiles({ per_page: 10 });
-    const first = itemsOf<ReachProfile>(profiles)[0];
+    const profiles = await c.listReachProfiles({ per_page: 50 });
+    const first = extractReachProfiles(profiles)[0];
     if (!first) {
       return {
         profileUuid: null,
@@ -198,7 +199,7 @@ export async function importReachContacts(opts: {
   // Wer nur ein Reach-Profil hat, sollte nichts konfigurieren müssen.
   let uuid = opts.profileUuid ?? (await getSetting(SETTINGS.reachProfileUuid)) ?? null;
   if (!uuid) {
-    const first = itemsOf<ReachProfile>(await c.listReachProfiles({ per_page: 10 }))[0];
+    const first = extractReachProfiles(await c.listReachProfiles({ per_page: 50 }))[0];
     if (!first) {
       throw new SyncError(
         "Im Hostinger-Konto ist kein Reach-Profil vorhanden. Kontakte können per CSV-Import oder „Kontakt hinzufügen“ gepflegt werden."
@@ -468,7 +469,9 @@ export async function diagnose(): Promise<HostingerDiagnosis> {
 
   // --- Reach-Profile (Kontakte, DNS-Status)
   try {
-    const profiles = await fetchAllPages((page) => c.listReachProfiles({ page, per_page: 50 }));
+    // Nicht fetchAllPages: der Endpunkt liefert Abonnements, deren Profile
+    // verschachtelt liegen. extractReachProfiles() geht diese Ebene tiefer.
+    const profiles = extractReachProfiles(await c.listReachProfiles({ per_page: 50 }));
     out.reachProfiles = profiles.map((p) => ({
       uuid: p.uuid,
       name: p.name ?? p.domain ?? p.uuid,
