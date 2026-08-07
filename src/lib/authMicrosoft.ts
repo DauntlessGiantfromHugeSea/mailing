@@ -105,7 +105,14 @@ export function configProblem(cfg: MicrosoftConfig): string | null {
     return `MICROSOFT_CLIENT_ID ist ungültig: "${cfg.clientId}". Erwartet wird die Anwendungs-ID als GUID — ebenfalls ohne spitze Klammern.`;
   }
   if (cfg.clientSecret.length < 8) {
-    return "MICROSOFT_CLIENT_SECRET sieht zu kurz aus. Erwartet wird der Wert des Clientschlüssels, nicht dessen ID (im Portal gibt es beides — gebraucht wird die Spalte „Wert“).";
+    return "MICROSOFT_CLIENT_SECRET sieht zu kurz aus. Erwartet wird der Wert des Clientschlüssels.";
+  }
+  // Der Clientschluessel-WERT enthaelt Sonderzeichen (~ . _ -) und ist keine
+  // GUID. Die Geheimnis-ID dagegen ist eine GUID und steht im Portal direkt
+  // neben dem Wert - eine haeufige Verwechslung, die Microsoft erst beim
+  // Token-Tausch mit AADSTS7000215 quittiert.
+  if (GUID_RE.test(cfg.clientSecret)) {
+    return "MICROSOFT_CLIENT_SECRET ist eine GUID — das ist die „Geheimnis-ID“, nicht der Wert. Gebraucht wird die Spalte „Wert“ aus „Zertifikate & Geheimnisse“. Dieser Wert ist nur unmittelbar nach dem Anlegen sichtbar; ist er nicht mehr einsehbar, muss ein neuer Clientschlüssel erzeugt werden.";
   }
   return null;
 }

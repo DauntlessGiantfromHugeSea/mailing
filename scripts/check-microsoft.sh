@@ -55,8 +55,19 @@ if [ -n "$TENANT" ] && [ "$TENANT" = "$CLIENT" ]; then
   info "der App-Registrierung stehen sie untereinander."
 fi
 
-[ ${#SECRET} -ge 8 ] && ok "MICROSOFT_CLIENT_SECRET ist gesetzt (${#SECRET} Zeichen)" \
-  || bad "MICROSOFT_CLIENT_SECRET fehlt oder ist zu kurz - gebraucht wird die Spalte „Wert“, nicht die „Geheimnis-ID“"
+if [ ${#SECRET} -lt 8 ]; then
+  bad "MICROSOFT_CLIENT_SECRET fehlt oder ist zu kurz"
+elif echo "$SECRET" | grep -qE "$GUID"; then
+  # Der Wert enthält Sonderzeichen und ist keine GUID. Die Geheimnis-ID ist
+  # eine GUID und steht im Portal direkt daneben - Microsoft merkt das erst
+  # beim Token-Tausch (AADSTS7000215).
+  bad "MICROSOFT_CLIENT_SECRET ist eine GUID - das ist die „Geheimnis-ID“, nicht der Wert"
+  info "Im Portal: Zertifikate & Geheimnisse -> Spalte „Wert“ (nicht „Geheimnis-ID“)."
+  info "Der Wert ist NUR direkt nach dem Anlegen sichtbar. Ist er weg, einen"
+  info "neuen Clientschlüssel erzeugen und den Wert sofort kopieren."
+else
+  ok "MICROSOFT_CLIENT_SECRET ist gesetzt (${#SECRET} Zeichen, keine GUID)"
+fi
 
 # --- Existiert der Tenant wirklich? --------------------------------------
 discovery() {
