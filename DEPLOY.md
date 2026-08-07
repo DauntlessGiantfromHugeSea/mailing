@@ -81,6 +81,30 @@ das automatisch.
 
 ---
 
+## Der kurze Weg
+
+Steht der DNS-Record (Schritt 1) und ist Docker auf dem Server installiert,
+genügen drei Befehle:
+
+```bash
+git clone https://github.com/DauntlessGiantfromHugeSea/mailing.git
+cd mailing && git checkout claude/randomized-email-sender-441ygi
+sh scripts/install.sh mailing.rss-fb.com admin@deine-domain.de
+```
+
+`install.sh` erzeugt die `.env` samt Secrets, führt den Preflight aus, prüft das
+Caddyfile, baut und startet den Stack und wartet auf das Zertifikat. Am Ende
+stehen die Zugangsdaten für den ersten Login auf dem Bildschirm.
+
+Mehrfaches Ausführen ist unschädlich: eine vorhandene `.env` wird **nicht**
+überschrieben — sonst wäre der `FIELD_ENCRYPTION_KEY` weg und mit ihm der Zugang
+zu allen verschlüsselten Daten.
+
+Die folgenden Schritte beschreiben dasselbe von Hand — nützlich zum Verstehen
+oder wenn das Skript irgendwo abbricht.
+
+---
+
 ## Schritt 2 — Code und Konfiguration auf den Server
 
 ```bash
