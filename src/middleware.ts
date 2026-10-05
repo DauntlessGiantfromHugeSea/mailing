@@ -14,7 +14,9 @@ import { SESSION_COOKIE } from "@/lib/session";
 // OIDC-Rücksprung /api/auth/microsoft/callback erfolgt zwangsläufig ohne
 // Session - stünde er nicht hier, würde die Middleware ihn auf /login
 // umleiten und die Anmeldung könnte nie abgeschlossen werden.
-const PUBLIC_PREFIXES = ["/login", "/abmelden", "/api/auth", "/api/cron"];
+// "/api/integration" ist die Schnittstelle zum E-Mail-Verteiler: ohne Session,
+// abgesichert über ein eigenes Bearer-Token (VERTEILER_SYNC_TOKEN) in der Route.
+const PUBLIC_PREFIXES = ["/login", "/abmelden", "/api/auth", "/api/cron", "/api/integration"];
 
 export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;

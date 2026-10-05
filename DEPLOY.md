@@ -435,6 +435,47 @@ Das Schema wird beim Start des `app`-Containers automatisch per
 
 ---
 
+## Abgleich mit dem E-Mail-Verteiler
+
+Der E-Mail-Verteiler (`https://intern.rss-fb.com/verteiler/`) ist die führende
+Kontaktdatenbank. Er gleicht sich regelmäßig über
+`POST /api/integration/verteiler` mit diesem Tool ab:
+
+- **Verteiler → Mailing:** Seine Sperrliste (Bounces, Abmeldungen, manuell)
+  landet hier auf der Sperrliste. Geplante Sendungen an diese Adressen werden
+  sofort abgebrochen. Die Liste **„Verteiler: Alle aktiven“** (Name im Verteiler
+  einstellbar) wird exakt auf den Stand des Verteilers gebracht. Kampagnen
+  einfach an diese Liste schicken.
+- **Mailing → Verteiler:** Wer hier über den Abmeldelink geht, zweimal bounct
+  oder sich beschwert, kommt beim nächsten Abgleich im Verteiler auf die
+  Sperrliste und wird dort nie wieder exportiert.
+
+Absicherung: gemeinsames Geheimnis als Bearer-Token. Ohne `VERTEILER_SYNC_TOKEN`
+ist die Schnittstelle abgeschaltet (503).
+
+Einrichtung:
+
+```bash
+openssl rand -hex 32          # Wert einmal erzeugen
+# hier in .env:                       VERTEILER_SYNC_TOKEN=<Wert>
+# im Verteiler in deploy/.env:        MAILING_SYNC_TOKEN=<derselbe Wert>
+docker compose up -d --build
+```
+
+Test der Schnittstelle (ohne Daten):
+
+```bash
+curl -s -X POST https://mailing.rss-fb.com/api/integration/verteiler \
+  -H "Authorization: Bearer <Wert>" -H "Content-Type: application/json" -d '{}'
+# erwartet: {"suppressionsAdded":0,...}  –  ohne/falsches Token: 401
+```
+
+Entwicklertest gegen eine **Test**-Datenbank:
+`npx tsx scripts/test-verteiler-sync.ts` (mit `DATABASE_URL`,
+`FIELD_ENCRYPTION_KEY`, `VERTEILER_SYNC_TOKEN`; leert die Tabellen).
+
+---
+
 ## Wenn es nicht klappt
 
 | Symptom | Ursache / Abhilfe |
