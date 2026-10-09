@@ -18,8 +18,35 @@ import { SESSION_COOKIE } from "@/lib/session";
 // abgesichert über ein eigenes Bearer-Token (VERTEILER_SYNC_TOKEN) in der Route.
 const PUBLIC_PREFIXES = ["/login", "/abmelden", "/api/auth", "/api/cron", "/api/integration"];
 
+// Schutz gegen untergeschobene Formular-Anfragen (CSRF) – auch von
+// Nachbar-Subdomains, die SameSite=Lax nicht abhält (Sicherheits-Audit 2026-10).
+// Maschinen-Schnittstellen (Bearer-Token) und die Abmeldung (One-Click per
+// Mail-Provider) sind ausgenommen.
+const CSRF_AUSNAHMEN = ["/api/integration", "/api/cron", "/abmelden"];
+
+function fremdeAnfrage(req: NextRequest): boolean {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return false;
+  const { pathname } = req.nextUrl;
+  if (CSRF_AUSNAHMEN.some((p) => pathname === p || pathname.startsWith(p + "/"))) return false;
+  const site = req.headers.get("sec-fetch-site");
+  if (site) return site !== "same-origin" && site !== "none";
+  const origin = req.headers.get("origin");
+  if (!origin) return false; // kein Browser-Kontext (z. B. Skript) -> kein CSRF
+  const first = (v: string | null): string | null => v?.split(",")[0]?.trim() || null;
+  const host = first(req.headers.get("x-forwarded-host")) ?? first(req.headers.get("host"));
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
+
+  if (fremdeAnfrage(req)) {
+    return new NextResponse("Anfrage von einer fremden Seite abgelehnt.", { status: 403 });
+  }
 
   if (PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();

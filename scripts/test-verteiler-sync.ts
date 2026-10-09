@@ -43,6 +43,7 @@ async function reset(): Promise<void> {
   await prisma.sender.deleteMany();
   await prisma.listMembership.deleteMany();
   await prisma.contactList.deleteMany();
+  await prisma.retiredUnsubscribeToken.deleteMany();
   await prisma.contact.deleteMany();
   await prisma.suppression.deleteMany();
   await prisma.auditLog.deleteMany();
@@ -138,6 +139,28 @@ async function main(): Promise<void> {
   // Klartext der Adressen steht nicht in der Sperrliste
   const sup = await prisma.suppression.findMany();
   check("Sperrliste ohne Klartext", sup.every((s) => !s.emailHash.includes("@")) && sup.length === 3);
+
+  // --- DSGVO-Löschung aus dem Verteiler
+  const neu1 = await contactBy("neu1@kunde.example.com");
+  const r4 = await call({
+    erase: [
+      { email: "neu1@kunde.example.com", keepSuppression: true },
+      { email: "spaeter-gesperrt@kunde.example.com", keepSuppression: false },
+      { email: "abgemeldet@kunde.example.com", keepSuppression: false },
+    ],
+    suppress: [{ email: "neu1@kunde.example.com", reason: "manuell" }],
+  });
+  check("erase -> 200", r4.status === 200, JSON.stringify(r4.json).slice(0, 200));
+  check("erase: 3 Kontakte gelöscht", r4.json.erased?.contactsDeleted === 3, JSON.stringify(r4.json.erased));
+  check("erase: Kontakt weg", (await contactBy("neu1@kunde.example.com")) === null);
+  check("erase: Abmeldelink bleibt gültig",
+    (await prisma.retiredUnsubscribeToken.count({ where: { token: neu1!.unsubscribeToken } })) === 1);
+  check("erase: Verteiler-Sperre ohne keepSuppression entfernt",
+    (await prisma.suppression.count({ where: { emailHash: blindIndex("spaeter-gesperrt@kunde.example.com") } })) === 0);
+  check("erase: eigene Abmeldung des Mailing-Tools bleibt",
+    (await prisma.suppression.count({ where: { emailHash: blindIndex("abgemeldet@kunde.example.com") } })) === 1);
+  check("erase + Sperre: Sperre danach vorhanden",
+    (await prisma.suppression.count({ where: { emailHash: blindIndex("neu1@kunde.example.com") } })) === 1);
 
   await reset();
   await prisma.$disconnect();

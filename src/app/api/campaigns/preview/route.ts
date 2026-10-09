@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/session";
+import { canEdit } from "@/lib/rbac";
 import { prisma } from "@/lib/db";
 import { previewSchedule } from "@/lib/schedule";
 import { parseMinuteOfDay } from "@/lib/sendWindow";
@@ -27,6 +28,9 @@ const Body = z.object({
 export async function POST(req: Request): Promise<Response> {
   const session = await getSession();
   if (!session) return jsonError("Nicht angemeldet", 401);
+  // Die Vorschau gehört zum Kampagnen-Formular -> nur für Bearbeiter
+  // (Sicherheits-Audit 2026-10: Rechenlast und Datenzugriff begrenzen).
+  if (!canEdit(session)) return jsonError("Keine Berechtigung", 403);
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return jsonError("Ungültige Eingabe", 422);

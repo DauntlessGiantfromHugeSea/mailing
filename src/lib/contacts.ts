@@ -278,8 +278,20 @@ function safeParseArray(json: string): unknown[] {
 
 /** Meldet einen Kontakt ab und setzt ihn auf die Sperrliste. */
 export async function unsubscribeByToken(token: string): Promise<Contact | null> {
-  const contact = await prisma.contact.findUnique({ where: { unsubscribeToken: token } });
-  if (!contact) return null;
+  let contact = await prisma.contact.findUnique({ where: { unsubscribeToken: token } });
+  if (!contact) {
+    // Token eines inzwischen gelöschten Kontakts: Adresse trotzdem sperren und
+    // einen neu angelegten Kontakt derselben Adresse abmelden.
+    const alt = await prisma.retiredUnsubscribeToken.findUnique({ where: { token } });
+    if (!alt) return null;
+    await prisma.suppression.upsert({
+      where: { emailHash: alt.emailHash },
+      create: { emailHash: alt.emailHash, reason: "unsubscribe" },
+      update: {},
+    });
+    contact = await prisma.contact.findUnique({ where: { emailHash: alt.emailHash } });
+    if (!contact) return null;
+  }
 
   const updated = await prisma.contact.update({
     where: { id: contact.id },

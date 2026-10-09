@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/session";
+import { canEdit } from "@/lib/rbac";
 import { prisma } from "@/lib/db";
 import { jsonError } from "@/lib/http";
 import { makeRng } from "@/lib/random";
 import {
   contactVars,
   ensureUnsubscribeFooter,
+  renderHtml,
   render,
   unsubscribeUrl,
   usedPlaceholders,
@@ -21,9 +23,9 @@ import { htmlToText } from "@/lib/mailer";
 // kein Postfach eingerichtet ist. Sie zeigt den Mailinhalt, nicht den Umschlag.
 
 const Body = z.object({
-  subject: z.string().default(""),
-  bodyHtml: z.string().default(""),
-  bodyText: z.string().optional(),
+  subject: z.string().max(1_000).default(""),
+  bodyHtml: z.string().max(200_000).default(""),
+  bodyText: z.string().max(200_000).optional(),
   /** Echten Kontakt nehmen; leer = Beispieldaten. */
   contactId: z.string().optional().nullable(),
   /** Wechselt die Spintax-Variante, ohne den Text zu ändern. */
@@ -43,6 +45,9 @@ const SAMPLE: Record<string, string> = {
 export async function POST(req: Request): Promise<Response> {
   const session = await getSession();
   if (!session) return jsonError("Nicht angemeldet", 401);
+  // Vorschau mit echten Kontaktdaten nur für Rollen, die Kampagnen bearbeiten
+  // dürfen (Sicherheits-Audit 2026-10: VIEWER konnte Abmelde-Tokens auslesen).
+  if (!canEdit(session)) return jsonError("Keine Berechtigung", 403);
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return jsonError("Ungültige Eingabe", 422);
@@ -56,7 +61,8 @@ export async function POST(req: Request): Promise<Response> {
     const contact = await prisma.contact.findUnique({ where: { id: contactId } });
     if (contact) {
       const v = contactVars(contact);
-      vars = { ...v };
+      // Nie den echten Abmeldelink des Kontakts in der Vorschau zeigen.
+      vars = { ...v, unsubscribeUrl: SAMPLE.unsubscribeUrl };
       usedContact = {
         id: contact.id,
         label: [v.firstName, v.lastName].filter(Boolean).join(" ") || v.email || "Kontakt",
@@ -69,7 +75,7 @@ export async function POST(req: Request): Promise<Response> {
   // Eigener RNG je Variante, damit sich Spintax-Varianten durchblättern lassen.
   const renderedSubject = render(subject, vars, makeRng(`preview:${variant}:subject`));
   const renderedHtml = ensureUnsubscribeFooter(
-    render(bodyHtml, vars, makeRng(`preview:${variant}:body`)),
+    renderHtml(bodyHtml, vars, makeRng(`preview:${variant}:body`)),
     unsub
   );
   const renderedText = bodyText

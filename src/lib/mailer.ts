@@ -2,6 +2,7 @@ import nodemailer, { type Transporter } from "nodemailer";
 import type SMTPTransport from "nodemailer/lib/smtp-transport";
 import type { Sender } from "@prisma/client";
 import { safeDecrypt } from "./crypto";
+import { assertSmtpTarget } from "./smtpTarget";
 
 // Der eigentliche Versand. Ein Transport pro Absender-Postfach, gecached ueber
 // die Prozesslaufzeit.
@@ -97,6 +98,7 @@ export function formatFrom(sender: Sender): string {
 export async function sendViaSender(sender: Sender, input: SendInput): Promise<SendResult> {
   let transporter: Transporter;
   try {
+    await assertSmtpTarget(sender.smtpHost, sender.smtpPort);
     transporter = transportFor(sender);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: false };
@@ -131,11 +133,18 @@ export async function sendViaSender(sender: Sender, input: SendInput): Promise<S
 /** Verbindungs- und Auth-Test ohne Mailversand. */
 export async function verifySender(sender: Sender): Promise<{ ok: boolean; error?: string }> {
   try {
+    await assertSmtpTarget(sender.smtpHost, sender.smtpPort);
     await transportFor(sender).verify();
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: kurzerFehler(e) };
   }
+}
+
+/** Fehlermeldung ohne Antworttext des Gegenübers (kein Banner-Leak). */
+function kurzerFehler(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  return msg.replace(/\s*response=[\s\S]*$/i, "").slice(0, 200);
 }
 
 export function htmlToText(html: string): string {

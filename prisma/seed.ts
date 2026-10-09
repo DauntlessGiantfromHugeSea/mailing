@@ -8,7 +8,11 @@ const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
   const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
-  const password = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe!2026";
+  const password = process.env.SEED_ADMIN_PASSWORD ?? "";
+  if (password.length < 12 || password === "ChangeMe!2026") {
+    console.error("SEED_ADMIN_PASSWORD fehlt, ist kürzer als 12 Zeichen oder das alte Standardpasswort – Seed abgebrochen.");
+    process.exit(1);
+  }
   const name = process.env.SEED_ADMIN_NAME ?? "Administrator";
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -20,9 +24,6 @@ async function main(): Promise<void> {
   });
 
   console.log(`Admin bereit: ${user.email}`);
-  if (password === "ChangeMe!2026") {
-    console.warn("WARNUNG: Standardpasswort in Benutzung. Bitte SEED_ADMIN_PASSWORD setzen und nach dem ersten Login ändern.");
-  }
 }
 
 main()

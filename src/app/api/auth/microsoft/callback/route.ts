@@ -76,10 +76,27 @@ export async function GET(req: Request): Promise<Response> {
       );
     }
 
-    // Zuordnung: erst über die stabile Objekt-ID, dann über die E-Mail.
-    let user =
-      (await prisma.user.findFirst({ where: { msOid: identity.oid } })) ??
-      (await prisma.user.findUnique({ where: { email: identity.email } }));
+    // Zuordnung: erst über die stabile Objekt-ID, dann über die E-Mail –
+    // aber per E-Mail nur, solange das Konto noch an KEINE Microsoft-Identität
+    // gebunden ist. Eine bestehende Bindung wird nie überschrieben
+    // (Sicherheits-Audit 2026-10).
+    let user = await prisma.user.findFirst({ where: { msOid: identity.oid } });
+    if (!user) {
+      const perMail = await prisma.user.findUnique({ where: { email: identity.email } });
+      if (perMail && perMail.msOid && perMail.msOid !== identity.oid) {
+        await audit({
+          action: "auth.microsoftRejected",
+          entity: "User",
+          entityId: perMail.id,
+          detail: `Konto ${identity.email} ist an eine andere Microsoft-Identität gebunden`,
+        });
+        return backWithError(
+          "/login",
+          "Dieses Konto ist bereits mit einer anderen Microsoft-Identität verknüpft."
+        );
+      }
+      user = perMail;
+    }
 
     if (!user) {
       if (!cfg.autoProvision) {
@@ -121,7 +138,7 @@ export async function GET(req: Request): Promise<Response> {
     user = await prisma.user.update({
       where: { id: user.id },
       data: {
-        msOid: identity.oid,
+        msOid: user.msOid || identity.oid,
         name: user.name || identity.name,
         lastLoginAt: new Date(),
         lastLoginVia: "microsoft",

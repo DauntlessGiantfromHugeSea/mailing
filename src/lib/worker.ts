@@ -2,7 +2,7 @@ import { prisma } from "./db";
 import { safeDecrypt } from "./crypto";
 import { sendViaSender } from "./mailer";
 import { pickSender, sendersForCampaign } from "./senders";
-import { contactVars, ensureUnsubscribeFooter, render, unsubscribeUrl } from "./templates";
+import { contactVars, ensureUnsubscribeFooter, render, renderHtml, unsubscribeUrl } from "./templates";
 import { makeRng } from "./random";
 import { isInWindow, windowFrom } from "./sendWindow";
 import type { Campaign, SendJob } from "@prisma/client";
@@ -209,7 +209,7 @@ async function processNextDueJob(result: TickResult): Promise<Outcome> {
   const vars = contactVars(contact);
   const unsubUrl = unsubscribeUrl(contact.unsubscribeToken);
   const subject = render(campaign.subject, vars, rng);
-  const html = ensureUnsubscribeFooter(render(campaign.bodyHtml, vars, rng), unsubUrl);
+  const html = ensureUnsubscribeFooter(renderHtml(campaign.bodyHtml, vars, rng), unsubUrl);
   const text = campaign.bodyText ? render(campaign.bodyText, vars, rng) : undefined;
 
   const res = await sendViaSender(sender, {

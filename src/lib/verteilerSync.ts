@@ -13,6 +13,8 @@ import { audit } from "./audit";
 //      Sendungen an diese Adressen werden abgebrochen,
 //   2. übergibt optional die Empfänger einer Liste -> diese Liste wird hier
 //      exakt auf diesen Stand gebracht (anlegen/aktualisieren/entfernen),
+//   0. übergibt DSGVO-Löschungen (`erase`) -> der Kontakt wird hier ebenfalls
+//      gelöscht (Abmeldelinks bleiben gültig, Sperre nach Wahl des Verteilers),
 //   3. fragt für seine aktiven Adressen ab, ob sie HIER gesperrt sind
 //      (Abmeldelink, Bounce, Beschwerde) -> Antwort geht zurück in den Verteiler.
 //
@@ -88,11 +90,17 @@ export const syncSchema = z.object({
     .max(MAX_ITEMS)
     .default([]),
   check: z.array(z.string().max(254)).max(MAX_ITEMS).default([]),
+  erase: z
+    .array(z.object({ email: z.string().max(254), keepSuppression: z.boolean().default(true) }))
+    .max(MAX_ITEMS)
+    .default([]),
 });
 
 export type SyncInput = z.infer<typeof syncSchema>;
 
 export interface SyncResult {
+  /** DSGVO-Löschungen verarbeitet (Anzahl übergebener Adressen; gelöscht = hier vorhanden). */
+  erased: { received: number; contactsDeleted: number; suppressionsRemoved: number };
   suppressionsAdded: number;
   contactsBlocked: number;
   jobsSkipped: number;
@@ -123,12 +131,53 @@ function chunks<T>(items: T[], size = CHUNK): T[][] {
 
 export async function runSync(input: SyncInput): Promise<SyncResult> {
   const result: SyncResult = {
+    erased: { received: 0, contactsDeleted: 0, suppressionsRemoved: 0 },
     suppressionsAdded: 0,
     contactsBlocked: 0,
     jobsSkipped: 0,
     list: null,
     suppressions: [],
   };
+
+  // ------------------------------------------- 0. DSGVO-Löschungen übernehmen
+  // Vor den Sperren, damit eine gleichzeitig übergebene Sperre für dieselbe
+  // Adresse danach wieder angelegt wird.
+  const erase = new Map<string, boolean>();
+  for (const x of input.erase) {
+    const e = norm(x.email);
+    if (e) erase.set(blindIndex(e), x.keepSuppression);
+  }
+  result.erased.received = erase.size;
+  for (const part of chunks([...erase.keys()])) {
+    const contacts = await prisma.contact.findMany({
+      where: { emailHash: { in: part } },
+      select: { id: true, emailHash: true, unsubscribeToken: true },
+    });
+    for (const c of contacts) {
+      // Abmeldelink aus bereits verschickten Mails bleibt gültig.
+      await prisma.retiredUnsubscribeToken.upsert({
+        where: { token: c.unsubscribeToken },
+        create: { token: c.unsubscribeToken, emailHash: c.emailHash },
+        update: {},
+      });
+    }
+    if (contacts.length) {
+      // SendJobs und Listen-Mitgliedschaften hängen per Cascade daran.
+      result.erased.contactsDeleted += (
+        await prisma.contact.deleteMany({ where: { id: { in: contacts.map((c) => c.id) } } })
+      ).count;
+    }
+    // Sperre nur entfernen, wenn der Verteiler das will UND sie von ihm stammt -
+    // eigene Abmeldungen/Beschwerden dieses Tools bleiben bestehen.
+    const ohneSperre = part.filter((h) => erase.get(h) === false);
+    if (ohneSperre.length) {
+      result.erased.suppressionsRemoved += (
+        await prisma.suppression.deleteMany({
+          where: { emailHash: { in: ohneSperre }, note: SYNC_NOTE },
+        })
+      ).count;
+    }
+  }
 
   // ---------------------------------------------------- 1. Sperren übernehmen
   const wanted = new Map<string, keyof typeof STATUS_FOR_REASON>();
@@ -265,6 +314,7 @@ export async function runSync(input: SyncInput): Promise<SyncResult> {
     action: "verteiler.sync",
     entity: "integration",
     detail:
+      `DSGVO-Löschungen: ${result.erased.contactsDeleted}/${result.erased.received}, ` +
       `Sperren neu: ${result.suppressionsAdded}, Kontakte gesperrt: ${result.contactsBlocked}, ` +
       `Sendungen abgebrochen: ${result.jobsSkipped}, Rückmeldungen: ${result.suppressions.length}` +
       (result.list

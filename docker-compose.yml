@@ -50,7 +50,7 @@ services:
       # Beim allerersten Start auf 1 setzen, danach wieder entfernen.
       RUN_SEED_ON_START: ${RUN_SEED_ON_START:-0}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe!2026}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}   # kein Standardpasswort (Sicherheits-Audit)
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Administrator}
     # Nur auf localhost gebunden: der Zugriff von außen läuft über den Proxy.
     # Zum Debuggen:  curl -I http://127.0.0.1:3000/login

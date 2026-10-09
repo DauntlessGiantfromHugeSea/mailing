@@ -30,7 +30,10 @@ export async function POST(
   try {
     switch (action) {
       case "plan": {
-        const res = await planCampaign(params.id, { reshuffle: form.get("reshuffle") === "1" });
+        const res = await planCampaign(params.id, {
+          reshuffle: form.get("reshuffle") === "1",
+          keepStatus: true,
+        });
         await audit({
           action: "campaign.plan",
           entity: "Campaign",

@@ -64,7 +64,7 @@ export interface PlanResult {
  */
 export async function planCampaign(
   campaignId: string,
-  opts: { startAt?: Date; reshuffle?: boolean } = {}
+  opts: { startAt?: Date; reshuffle?: boolean; keepStatus?: boolean } = {}
 ): Promise<PlanResult> {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new CampaignError("Kampagne nicht gefunden");
@@ -88,7 +88,11 @@ export async function planCampaign(
   }
 
   const seed = opts.reshuffle || !campaign.randomSeed ? newSeed() : campaign.randomSeed;
-  const startAt = opts.startAt ?? campaign.startAt ?? new Date();
+  // Nie in der Vergangenheit planen: sonst gingen alle "verpassten" Termine
+  // auf einmal raus (Sicherheits-Audit 2026-10).
+  const jetzt = new Date();
+  const startAt =
+    opts.startAt ?? (campaign.startAt && campaign.startAt > jetzt ? campaign.startAt : jetzt);
   const pacing = { ...pacingFrom(campaign), seed };
   const slots = buildSchedule(recipients, startAt, pacing, windowOf(campaign));
 
@@ -122,7 +126,11 @@ export async function planCampaign(
     await tx.campaign.update({
       where: { id: campaignId },
       data: {
-        status: "SCHEDULED",
+        // "Neu einplanen" startet nichts: Entwurf bleibt Entwurf, pausiert
+        // bleibt pausiert, laufend bleibt laufend. Nur launch setzt SCHEDULED.
+        status: opts.keepStatus
+          ? campaign.status === "SCHEDULED" ? "DRAFT" : campaign.status
+          : "SCHEDULED",
         randomSeed: seed,
         startAt,
         scheduledAt: new Date(),
@@ -142,6 +150,12 @@ export async function planCampaign(
 export async function launchCampaign(campaignId: string, startAt?: Date): Promise<PlanResult> {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new CampaignError("Kampagne nicht gefunden");
+
+  // Pausierte Kampagne: wie "Fortsetzen" behandeln, damit überfällige Termine
+  // verschoben statt gesammelt verschickt werden.
+  if (campaign.status === "PAUSED") {
+    await resumeCampaign(campaignId);
+  }
 
   const pending = await prisma.sendJob.count({ where: { campaignId, status: "PENDING" } });
   let result: PlanResult;

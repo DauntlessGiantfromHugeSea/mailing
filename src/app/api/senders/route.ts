@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { assertSmtpTarget } from "@/lib/smtpTarget";
 import { getSession } from "@/lib/session";
 import { canEdit } from "@/lib/rbac";
 import { encryptField } from "@/lib/crypto";
@@ -22,6 +23,12 @@ export async function POST(req: Request): Promise<Response> {
 
   const port = Number(form.get("smtpPort") ?? 465);
   const replyTo = String(form.get("replyTo") ?? "").trim();
+  const smtpHost = String(form.get("smtpHost") ?? "smtp.hostinger.com").trim() || "smtp.hostinger.com";
+  try {
+    await assertSmtpTarget(smtpHost, port);
+  } catch (e) {
+    return backWithError("/senders", e instanceof Error ? e.message : "SMTP-Server nicht erlaubt.");
+  }
 
   try {
     const sender = await prisma.sender.create({
@@ -30,8 +37,8 @@ export async function POST(req: Request): Promise<Response> {
         email,
         fromName,
         replyTo: replyTo || null,
-        smtpHost: String(form.get("smtpHost") ?? "smtp.hostinger.com").trim() || "smtp.hostinger.com",
-        smtpPort: Number.isFinite(port) ? port : 465,
+        smtpHost,
+        smtpPort: port,
         smtpSecure: port === 465,
         smtpUser: String(form.get("smtpUser") ?? "").trim() || email,
         smtpPassEnc: encryptField(smtpPassword)!,

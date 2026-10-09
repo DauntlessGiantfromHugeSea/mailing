@@ -172,6 +172,16 @@ model Suppression {
   createdAt DateTime @default(now())
 }
 
+// Abmelde-Tokens gelöschter Kontakte: Links in bereits verschickten Mails
+// müssen weiter wirken (Sicherheits-Audit 2026-10).
+model RetiredUnsubscribeToken {
+  token     String   @id
+  emailHash String
+  createdAt DateTime @default(now())
+
+  @@index([emailHash])
+}
+
 // ---------------------------------------------------------------- Kampagnen
 
 enum CampaignStatus {

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/session";
-import { canEdit } from "@/lib/rbac";
+import { canEdit, isAdmin } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { backWithError, backWithOk, errorMessage, seeOther } from "@/lib/http";
 
@@ -50,6 +50,22 @@ export async function POST(
       }
 
       case "reactivate": {
+        // Eine Abmeldung oder Beschwerde des Empfängers selbst darf nur ein
+        // Admin aufheben – und nur nachvollziehbar (Sicherheits-Audit 2026-10).
+        const sperren = await prisma.suppression.findMany({ where: { emailHash: contact.emailHash } });
+        const vomEmpfaenger =
+          contact.status === "UNSUBSCRIBED" ||
+          contact.status === "COMPLAINED" ||
+          sperren.some((s) => /unsub|abmeld|complain|beschwer/i.test(String(s.reason ?? "")));
+        if (vomEmpfaenger && !isAdmin(session)) {
+          return backWithError(
+            "/contacts",
+            "Abmeldungen und Beschwerden des Empfängers kann nur ein Admin aufheben (mit neuer Einwilligung)."
+          );
+        }
+        const vorher = `Status vorher: ${contact.status}; Sperrgründe: ${
+          sperren.map((s) => String(s.reason ?? "?")).join(", ") || "keine"
+        }`;
         await prisma.contact.update({
           where: { id: contact.id },
           data: { status: "ACTIVE", unsubscribedAt: null, bounceCount: 0 },
@@ -59,12 +75,19 @@ export async function POST(
           action: "contact.reactivate",
           entity: "Contact",
           entityId: contact.id,
+          detail: vorher,
           userId: session.uid,
         });
         return backWithOk("/contacts", "Kontakt wieder freigegeben.");
       }
 
       case "delete": {
+        // Abmeldelink aus bereits verschickten Mails bleibt gültig.
+        await prisma.retiredUnsubscribeToken.upsert({
+          where: { token: contact.unsubscribeToken },
+          create: { token: contact.unsubscribeToken, emailHash: contact.emailHash },
+          update: {},
+        });
         await prisma.contact.delete({ where: { id: contact.id } });
         await audit({
           action: "contact.delete",
